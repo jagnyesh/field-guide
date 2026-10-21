@@ -27,6 +27,12 @@ tools = [step["tool"] for turn in last["turns"] for step in turn["steps"]]
 if scenario == "skeleton":
     check(tools[:2] == ["Read", "Bash"], f"steps are Read then Bash (got {tools})")
 
+runs = [step["run"] for turn in last["turns"] for step in turn["steps"] if "run" in step]
+
+if scenario == "pytest":
+    check(len(runs) == 1 and runs[0]["runner"] == "pytest", f"one pytest run was read ({len(runs)})")
+    check(bool(runs) and (runs[0]["passed"], runs[0]["failed"]) == (3, 2), f"counts match the fixture's baseline ({runs[0] if runs else None})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

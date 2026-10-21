@@ -1,5 +1,7 @@
-import { classify } from './classify'
-import type { StepKind } from './classify'
+import { classify, commandVerification } from './classify'
+import type { StepKind, Verification } from './classify'
+import { parseTestRun } from './testrun'
+import type { TestRun } from './testrun'
 
 export type ToolUse = {
   readonly tool_use_id: string
@@ -24,6 +26,9 @@ export type Step = {
   readonly summary: string
   readonly isError: boolean
   readonly resultSize: number
+  // On a verify step: what it verified, and for a test runner the run as read from its output.
+  readonly verification?: Verification
+  readonly run?: TestRun
   // Set on a subagent's own steps, and on an Agent step that started one.
   readonly agentId?: string
   // On an Agent step: the kind of subagent it started, and that subagent's steps.
@@ -64,11 +69,22 @@ function toolUses(messages: readonly TranscriptMessage[]): ToolUse[] {
   return messages.flatMap(message => (message.role === 'assistant' ? (message.toolUses ?? []) : []))
 }
 
+// A test command whose output can't be read proves nothing the ledger can show, so it is a plain run.
+function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run'> | null {
+  if (use.tool !== 'Bash' || typeof use.input.command !== 'string') return null
+  const verification = commandVerification(use.input.command)
+  if (verification !== 'tested') return verification ? { kind: 'verify', verification } : null
+  const run = parseTestRun(use.input.command, use.text ?? '')
+  return run ? { kind: 'verify', verification, run } : { kind: 'run' }
+}
+
 function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string): Step {
+  const kind = classify(use.tool, use.input)
   const step: Step = {
     id: use.tool_use_id,
     tool: use.tool,
-    kind: classify(use.tool, use.input),
+    kind,
+    ...(kind === 'verify' ? verifyFacts(use) : {}),
     summary: summarize(use),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
@@ -96,6 +112,24 @@ export function isDeveloperPrompt(message: TranscriptMessage): boolean {
   if (message.role !== 'user' || message.toolResults?.length) return false
   const text = message.text.trimStart()
   return text.length > 0 && !ENGINE_WRITTEN.some(pattern => pattern.test(text))
+}
+
+// Steps in the order they ran, a subagent's right after the Agent step that started it.
+export function flatSteps(turn: Turn): Step[] {
+  return turn.steps.flatMap(step => [step, ...(step.children ? flatSteps({ index: turn.index, steps: [...step.children] }) : [])])
+}
+
+// Tested or Checked by what ran after the turn's last edit (or anywhere, with no edit); null for neither.
+export function verificationOf(turn: Turn): Verification | null {
+  const steps = flatSteps(turn)
+  let lastEdit = -1
+  steps.forEach((step, i) => {
+    if (step.kind === 'edit') lastEdit = i
+  })
+  const after = steps.slice(lastEdit + 1)
+  if (after.some(step => step.verification === 'tested')) return 'tested'
+  if (after.some(step => step.verification === 'checked')) return 'checked'
+  return null
 }
 
 // The agent ids a transcript's Agent steps started; the session's agent list is empty after a resume.

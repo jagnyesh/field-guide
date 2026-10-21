@@ -1,0 +1,30 @@
+.sF...F                                                                  [100%]
+=================================== FAILURES ===================================
+______________________________ test_legacy_format ______________________________
+
+    def test_legacy_format():
+>       assert "v1" == "v2"
+E       AssertionError: assert 'v1' == 'v2'
+E         
+E         - v2
+E         + v1
+
+tests/test_legacy.py:2: AssertionError
+_______________________________ test_over_limit ________________________________
+
+    def test_over_limit():
+>       assert status_for(11) == 403
+E       assert 429 == 403
+E        +  where 429 = status_for(11)
+
+tests/test_ratelimit.py:9: AssertionError
+=============================== warnings summary ===============================
+tests/test_extra.py::test_warns
+  /work/tests/test_extra.py:7: DeprecationWarning: old api
+    warnings.warn("old api", DeprecationWarning)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_legacy.py::test_legacy_format - AssertionError: assert 'v1'...
+FAILED tests/test_ratelimit.py::test_over_limit - assert 429 == 403
+2 failed, 4 passed, 1 skipped, 1 warning in 0.01s

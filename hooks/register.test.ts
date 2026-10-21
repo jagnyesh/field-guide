@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
+import { OUTPUT } from '../lib/fixtures/pytest'
 import { standIn } from './stand-in'
 
 const ROWS = [
@@ -108,6 +109,42 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /^✗ search\s+Grep\s+greet/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /delegate\s+Agent\s+Find callers/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /↳ Explore › read\s+Read\s+c\.py/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  const PANE_PROPS = { isFocused: false, bodyColumns: 100, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 30 }, view: {} }
+  const RUN = { command: 'guide', origin: { kind: 'composer' as const }, presentation: { isFullscreen: false, columns: 160 } }
+  const TESTED = [
+    { role: 'user', text: 'fix the limit', toolUses: [] },
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [
+        { tool_use_id: 'p1', tool: 'Bash', input: { command: '.venv/bin/python -m pytest -q' }, text: OUTPUT['param-fail'], isError: true },
+        { tool_use_id: 'e1', tool: 'Edit', input: { file_path: 'src/ratelimit.py' }, text: 'ok' },
+        { tool_use_id: 'p2', tool: 'Bash', input: { command: '.venv/bin/python -m pytest -q' }, text: OUTPUT['all-pass'] },
+      ],
+    },
+  ]
+
+  test('/guide ledger lists each test run in order, with counts and whole failing ids', async ($, on) => {
+    const engine = standIn(on, TESTED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'ledger' })
+    expect(engine.opened).toEqual(['field-guide-ledger'])
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    expect(await ui.find({ type: 'Text', text: /Turn 1 · pytest · 2 passed, 3 failed/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /test_lookup\[FG_MARKER_7f3a\]/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Turn 1 · pytest · 3 passed$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('Loop Trace says whether the turn was Tested, Checked, or not verified after its last edit', async ($, on) => {
+    standIn(on, TESTED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'trace' })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /Tested after the last edit/ })).toBeDefined()
     await ui.unmount()
   })
 })

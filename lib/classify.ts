@@ -57,6 +57,12 @@ export function verification(argv: readonly string[]): Verification | null {
   return null
 }
 
+// The strongest verification any part of a command line performs.
+export function commandVerification(command: string): Verification | null {
+  const found = segments(command).map(segment => verification(segment.argv))
+  return found.includes('tested') ? 'tested' : found.includes('checked') ? 'checked' : null
+}
+
 function segmentKind(segment: Segment): StepKind | null {
   if (segment.writesFile) return 'run'
   const argv = segment.argv

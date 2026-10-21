@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { buildTimeline } from './transcript'
+import { buildTimeline, verificationOf } from './transcript'
+import { OUTPUT } from './fixtures/pytest'
 import type { ToolUse, TranscriptMessage } from './transcript'
 
 const prompt = (text: string): TranscriptMessage => ({ role: 'user', text, toolUses: [] })
@@ -57,7 +58,7 @@ describe('Transcript Reader', () => {
   })
 
   test('each step carries its kind', async () => {
-    const [turn] = buildTimeline([prompt('go'), reply('', [use('r', 'Read', { file_path: 'a' }), use('b', 'Bash', { command: 'pytest' })])])
+    const [turn] = buildTimeline([prompt('go'), reply('', [use('r', 'Read', { file_path: 'a' }), use('b', 'Bash', { command: 'pytest' }, OUTPUT.quiet)])])
     expect(turn.steps.map(s => s.kind)).toEqual(['read', 'verify'])
   })
 
@@ -92,5 +93,41 @@ describe('Transcript Reader', () => {
     ])
     expect(turns.length).toBe(1)
     expect(turns[0].steps.map(s => s.id)).toEqual(['a', 'r'])
+  })
+
+  test('a test run it can read is attached to its step; one it cannot read is a plain run', async () => {
+    const [turn] = buildTimeline([
+      prompt('go'),
+      reply('', [
+        use('p', 'Bash', { command: '.venv/bin/python -m pytest -q' }, OUTPUT.quiet),
+        use('j', 'Bash', { command: 'npm test' }, 'Tests: 2 passed, 2 total'),
+        use('l', 'Bash', { command: 'ruff check .' }, 'All checks passed!'),
+      ]),
+    ])
+    const [pytest, npm, ruff] = turn.steps
+    expect([pytest.kind, pytest.verification, pytest.run?.failed]).toEqual(['verify', 'tested', 2])
+    expect([npm.kind, npm.verification, npm.run]).toEqual(['run', undefined, undefined])
+    expect([ruff.kind, ruff.verification]).toEqual(['verify', 'checked'])
+  })
+
+  test('a Settled turn is Tested or Checked by what ran after its last edit, or neither', async () => {
+    const pytest = (id: string) => use(id, 'Bash', { command: 'pytest -q' }, OUTPUT['all-pass'])
+    const ruff = (id: string) => use(id, 'Bash', { command: 'ruff check .' })
+    const edit = (id: string) => use(id, 'Edit', { file_path: 'a.py' })
+    const of = (...uses: ToolUse[]) => verificationOf(buildTimeline([prompt('go'), reply('', uses)])[0])
+    expect(of(edit('e'), pytest('p'))).toBe('tested')
+    expect(of(pytest('p'), edit('e'))).toBe(null)
+    expect(of(edit('e'), ruff('r'))).toBe('checked')
+    expect(of(edit('e'), ruff('r'), pytest('p'))).toBe('tested')
+    expect(of(ruff('r'))).toBe('checked')
+    expect(of(use('r', 'Read', { file_path: 'a.py' }))).toBe(null)
+  })
+
+  test("a test run inside a subagent after the main loop's edit counts", async () => {
+    const turns = buildTimeline(
+      [prompt('go'), reply('', [use('e', 'Edit', { file_path: 'a.py' }), { ...use('a', 'Agent', { description: 'run tests' }), agentId: 'a1' }])],
+      () => [reply('', [use('p', 'Bash', { command: 'pytest -q' }, OUTPUT['all-pass'])])],
+    )
+    expect(verificationOf(turns[0])).toBe('tested')
   })
 })

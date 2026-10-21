@@ -1,0 +1,38 @@
+FF..F                                                                    [100%]
+=================================== FAILURES ===================================
+______________________________ test_legacy_format ______________________________
+
+    def test_legacy_format():
+>       assert "v1" == "v2"
+E       AssertionError: assert 'v1' == 'v2'
+E         
+E         - v2
+E         + v1
+
+tests/test_legacy.py:2: AssertionError
+_________________________ test_lookup[FG_MARKER_7f3a] __________________________
+
+key = 'FG_MARKER_7f3a'
+
+    @pytest.mark.parametrize("key", ["FG_MARKER_7f3a", "alpha"])
+    def test_lookup(key):
+>       assert lookup(key) == "found"
+E       AssertionError: assert 'missing' == 'found'
+E         
+E         - found
+E         + missing
+
+tests/test_lookup.py:8: AssertionError
+_______________________________ test_over_limit ________________________________
+
+    def test_over_limit():
+>       assert status_for(11) == 403
+E       assert 429 == 403
+E        +  where 429 = status_for(11)
+
+tests/test_ratelimit.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_legacy.py::test_legacy_format - AssertionError: assert 'v1'...
+FAILED tests/test_lookup.py::test_lookup[FG_MARKER_7f3a] - AssertionError: as...
+FAILED tests/test_ratelimit.py::test_over_limit - assert 429 == 403
+3 failed, 2 passed in 0.01s
