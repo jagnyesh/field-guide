@@ -1,3 +1,4 @@
+import { asBuiltIn, shortName } from './mcp'
 import { summarize } from './transcript'
 import type { TranscriptMessage } from './transcript'
 import { approxTokens } from './xray'
@@ -28,7 +29,7 @@ export function turnGrowth({ measured, rows, attachmentChars, cwd = '' }: Growth
     }
     text += row.text.length
     for (const use of row.toolUses ?? []) {
-      parts.push({ label: `${use.tool} ${summarize(use, cwd)}`.trimEnd(), approxTokens: approxTokens(use.text?.length ?? 0) })
+      parts.push({ label: `${shortName(use.tool)} ${summarize(asBuiltIn(use), cwd)}`.trimEnd(), approxTokens: approxTokens(use.text?.length ?? 0) })
     }
   }
   if (attachmentChars > 0) parts.push({ label: 'Attachments', approxTokens: approxTokens(attachmentChars) })

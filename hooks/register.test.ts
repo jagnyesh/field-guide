@@ -592,5 +592,39 @@ describe('Loop Trace pane', () => {
     expect(await ledger.find({ type: 'Text', text: /^○ Boundary mock/ })).toBeDefined()
     await ledger.unmount()
   })
+
+  test('the Live Probe also snapshots after an MCP shell call, such as lean-ctx\'s', async ($, on) => {
+    let callId = ''
+    const rows = () => [
+      { role: 'user', text: 'shorten the window', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: callId, tool: 'mcp__lean-ctx__ctx_shell', input: { command: 'python tools/rewrite.py' }, text: '' }] },
+    ]
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    const engine = standIn(on, rows, { status: ' M src/settings.ini\0', mtimes: { 'src/settings.ini': 5_000 } })
+    on('tool.call', (_, e) => {
+      callId = e.tool_use_id
+      return { result: { content: [] }, text: '' }
+    })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'mcp__lean-ctx__ctx_shell', command: 'python tools/rewrite.py' })
+    await clock.settle()
+    expect(engine.processes.some(p => p.argv.includes('status'))).toBe(true)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /edit\s+ctx_shell\s+python tools\/rewrite\.py · via shell, exact: src\/settings\.ini/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a turn with no edit says tests ran, not that they ran after an edit', async ($, on) => {
+    standIn(on, [
+      { role: 'user', text: 'run the tests', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'p', tool: 'Bash', input: { command: 'pytest -q' }, text: OUTPUT['all-pass'] }] },
+    ])
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /^Tests ran this turn$/ })).toBeDefined()
+    await ui.unmount()
+  })
 })
 

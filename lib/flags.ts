@@ -1,7 +1,7 @@
 import { DEFAULT_BOUNDARY_MODULES, boundaryTargets } from './mocks'
 import { covers, testIdFile } from './testrun'
 import type { TestRun } from './testrun'
-import { flatSteps, verificationOf } from './transcript'
+import { changedFiles, flatSteps, verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
 
 export type FindingKind = 'unverified-edit' | 'ended-red' | 'red-step' | 'test-changed-to-pass' | 'test-and-source-changed' | 'boundary-mock'
@@ -39,7 +39,7 @@ function baselines(session: readonly Turn[]): Map<string, TestRun> {
   const seen = new Set<string>()
   let sourceEdited = false
   for (const step of session.flatMap(flatSteps)) {
-    if (step.kind === 'edit' && touchesSource(step)) sourceEdited = true
+    if (changedFiles(step) && touchesSource(step)) sourceEdited = true
     if (!step.run || seen.has(step.run.runner)) continue
     seen.add(step.run.runner)
     if (!sourceEdited) found.set(step.run.runner, step.run)
@@ -103,7 +103,7 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
   const already = new Set(base?.failingIds ?? [])
   const fresh = last.failingIds.filter(id => !already.has(id))
   if (fresh.length === 0) return null
-  const edits = flatSteps(turn).filter(step => step.kind === 'edit')
+  const edits = flatSteps(turn).filter(changedFiles)
   const isRedStep = !edits.some(touchesSource) && fresh.every(id => edits.some(step => touchesFile(step, testFile(id))))
   if (isRedStep) {
     return {
@@ -122,13 +122,15 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
     title: 'Ended red',
     view: 'ledger',
     stepIds: [runs[runs.length - 1].id],
-    reason: `The last test run in this turn has ${plural(fresh.length, 'failing test that was', 'failing tests that were')} not failing at the start of the session.`,
+    reason: base
+      ? `The last test run in this turn has ${plural(fresh.length, 'failing test that was', 'failing tests that were')} not failing at the start of the session.`
+      : `The last test run in this turn has ${plural(fresh.length, 'failing test', 'failing tests')}, and no baseline to compare with: the first test run came after an edit, so they may or may not be new.`,
     testIds: fresh,
   }
 }
 
 function unverifiedEdit(turn: Turn): Finding | null {
-  const edits = flatSteps(turn).filter(step => step.kind === 'edit')
+  const edits = flatSteps(turn).filter(changedFiles)
   if (edits.length === 0 || verificationOf(turn) !== null) return null
   return {
     kind: 'unverified-edit',
@@ -155,7 +157,7 @@ function passTransitions(turn: Turn, session: readonly Turn[]): { id: string; be
       if (!earlier || earlier.runner !== run.runner) continue
       for (const id of earlier.failingIds) {
         if (found.has(id) || failingNow.has(id) || !covers(run, id) || !covers(earlier, id)) continue
-        found.set(id, steps.slice(i + 1, j).filter(step => step.kind === 'edit'))
+        found.set(id, steps.slice(i + 1, j).filter(changedFiles))
       }
       break
     }
@@ -201,7 +203,7 @@ function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
 
 function boundaryMock(turn: Turn, options: JudgeOptions): Finding | null {
   const modules = options.boundaryModules?.length ? options.boundaryModules : DEFAULT_BOUNDARY_MODULES
-  const steps = flatSteps(turn).filter(step => step.mockTargets?.length && (pathsOf(step) ?? []).some(isTestFile))
+  const steps = flatSteps(turn).filter(step => changedFiles(step) && step.mockTargets?.length && (pathsOf(step) ?? []).some(isTestFile))
   const hits = boundaryTargets(steps.flatMap(step => step.mockTargets ?? []), modules)
   if (hits.length === 0) return null
   return {

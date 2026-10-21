@@ -1,4 +1,4 @@
-import { flatSteps } from './transcript'
+import { changedFiles, flatSteps } from './transcript'
 import type { Step, Turn } from './transcript'
 
 // `agent` names the kind of subagent that did it; the main loop saw only that subagent's summary.
@@ -17,7 +17,7 @@ export type EarlierReads = {
 }
 
 function editedFiles(step: Step): readonly string[] {
-  if (step.kind !== 'edit') return []
+  if (!changedFiles(step)) return []
   if (step.shellEdit) return step.shellEdit.paths
   return step.path ? [step.path] : []
 }

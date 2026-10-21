@@ -199,3 +199,20 @@ describe('Loop Flags: Boundary mock', () => {
   })
 })
 
+describe('Loop Flags: failed edits', () => {
+  test('an edit that failed changed nothing: no Unverified edit, and it does not move the last edit', async () => {
+    const failed = { ...use('e', 'Edit', { file_path: 'src/settings.ini' }, 'File is covered by a Read deny rule'), isError: true as const }
+    expect(kinds(session([failed]))).toEqual([])
+    expect(kinds(session([use('e1', 'Edit', { file_path: 'src/a.py' }), run('p', OUTPUT['all-pass']), failed]))).toEqual([])
+  })
+})
+
+describe('Loop Flags: Ended red without a baseline', () => {
+  test('says there is no baseline instead of claiming the failures are new', async () => {
+    const turns = session([use('e', 'Edit', { file_path: 'src/settings.ini' })], [run('p', OUTPUT.quiet)])
+    const red = judge(turns[1], turns)?.find(f => f.kind === 'ended-red')
+    expect(red?.reason).toMatch(/no baseline to compare with: the first test run came after an edit/)
+    expect(red?.reason).not.toMatch(/not failing at the start/)
+  })
+})
+
