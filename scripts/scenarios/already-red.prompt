@@ -1,0 +1,1 @@
+Do exactly these steps and nothing else: 1) Run the Bash command: .venv/bin/python -m pytest -q 2) Reply with the single word: done

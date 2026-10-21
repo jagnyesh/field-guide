@@ -1,0 +1,46 @@
+FAIL tests/limit.test.js
+  ✕ lookup FG_MARKER_7f3a (1 ms)
+  ✓ lookup alpha
+  ○ skipped later
+  statusFor
+    ✓ under limit (1 ms)
+    ✕ over limit (1 ms)
+
+  ● statusFor › over limit
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 429
+
+      2 | describe('statusFor', () => {
+      3 |   test('under limit', () => { expect(statusFor(3)).toBe(200) })
+    > 4 |   test('over limit', () => { expect(statusFor(11)).toBe(403) })
+        |                                                    ^
+      5 | })
+      6 | test.each(['FG_MARKER_7f3a', 'alpha'])('lookup %s', key => { expect(lookup(key)).toBe('found') })
+      7 | test.skip('later', () => {})
+
+      at Object.toBe (tests/limit.test.js:4:52)
+
+  ● lookup FG_MARKER_7f3a
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "found"
+    Received: "missing"
+
+      4 |   test('over limit', () => { expect(statusFor(11)).toBe(403) })
+      5 | })
+    > 6 | test.each(['FG_MARKER_7f3a', 'alpha'])('lookup %s', key => { expect(lookup(key)).toBe('found') })
+        |                                                                                  ^
+      7 | test.skip('later', () => {})
+      8 |
+
+      at toBe (tests/limit.test.js:6:82)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 1 skipped, 2 passed, 5 total
+Snapshots:   0 total
+Time:        0.128 s
+Ran all test suites.

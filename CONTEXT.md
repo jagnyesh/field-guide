@@ -22,7 +22,7 @@ _Avoid_: turn (when the engine's single main-loop turn is not what is meant)
 
 **Reading List**:
 For one edited file, the files the agent read earlier in the session before making that edit, in first-read order. Part of Loop Trace. The one piece of codebase understanding in v1, because it comes from the agent's own actions and is exact.
-- A file read in an earlier turn counts. A file read before a compaction stays on the list, marked "read before compaction": the engine may re-attach recently read files after compacting, and those re-attachments do not appear in the transcript.
+- A file read in an earlier turn counts. A file read before a compaction stays on the list: shown as re-attached when the engine attaches it again after the compaction, otherwise marked "read before compaction". Re-attachments are not in the transcript; the engine raises them as file attachments on the first request after compacting, for files read with the Read tool (not for shell reads).
 - A file read by a subagent counts, shown under that subagent: the main loop saw only the subagent's summary.
 - A search counts as its query, not as the files it matched.
 - A file shown by a read-only shell command counts as a read.
@@ -79,7 +79,7 @@ A test id that failed and then passed, where every edit between the two runs was
 _Avoid_: weakened assertion, cheating
 
 **Metadata-only rule**:
-No text from a tool result or a message leaves the transcript. Field Guide copies only paths, test ids, counts, sizes, timings, flag kinds, and search queries. Test ids lose their parameter part, and queries are left out, everywhere except the developer's own view of the pane.
+No text from a tool result or a message leaves the transcript. Field Guide copies only paths, test ids, counts, sizes, timings, flag kinds, and search queries. Test ids lose their parameter part, and queries are left out, everywhere except the developer's own view of the pane. A vitest or jest id keeps only its file there, since those runners write parameter values into the test's name.
 _Avoid_: redaction (nothing is detected or removed; content is never copied)
 
 ## Relationships

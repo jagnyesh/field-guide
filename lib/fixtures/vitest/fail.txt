@@ -1,0 +1,51 @@
+
+ RUN  v2.1.9 /work
+
+ ❯ tests/limit.test.js (5 tests | 2 failed | 1 skipped) 5ms
+   × statusFor > over limit 3ms
+     → expected 429 to be 403 // Object.is equality
+   × lookup FG_MARKER_7f3a 1ms
+     → expected 'missing' to be 'found' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/limit.test.js > statusFor > over limit
+AssertionError: expected 429 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+- 403
++ 429
+
+ ❯ tests/limit.test.js:4:52
+      2| describe('statusFor', () => {
+      3|   test('under limit', () => { expect(statusFor(3)).toBe(200) })
+      4|   test('over limit', () => { expect(statusFor(11)).toBe(403) })
+       |                                                    ^
+      5| })
+      6| test.each(['FG_MARKER_7f3a', 'alpha'])('lookup %s', key => { expect(lo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/limit.test.js > lookup FG_MARKER_7f3a
+AssertionError: expected 'missing' to be 'found' // Object.is equality
+
+Expected: "found"
+Received: "missing"
+
+ ❯ tests/limit.test.js:6:82
+      4|   test('over limit', () => { expect(statusFor(11)).toBe(403) })
+      5| })
+      6| test.each(['FG_MARKER_7f3a', 'alpha'])('lookup %s', key => { expect(lo…
+       |                                                                                  ^
+      7| test.skip('later', () => {})
+      8| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed | 1 skipped (5)
+   Start at  00:01:13
+   Duration  162ms (transform 8ms, setup 0ms, collect 4ms, tests 5ms, environment 0ms, prepare 27ms)
+

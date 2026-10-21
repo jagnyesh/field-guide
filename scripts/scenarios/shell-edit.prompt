@@ -1,0 +1,1 @@
+Do exactly these steps and nothing else: 1) Run the Bash command: sed -i '' 's/window_seconds = 60/window_seconds = 30/' src/settings.ini 2) Reply with the single word: done

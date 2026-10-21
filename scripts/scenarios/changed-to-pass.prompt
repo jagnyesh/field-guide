@@ -1,0 +1,2 @@
+Do exactly these steps and nothing else: 1) Run the Bash command: .venv/bin/python -m pytest -q 2) Reply with the single word: done
+Do exactly these steps and nothing else: 1) Use the Read tool to read tests/test_ratelimit.py. 2) Use the Edit tool to change "assert status_for(11) == 403" to "assert status_for(11) == 429" in tests/test_ratelimit.py. 3) Run the Bash command: .venv/bin/python -m pytest -q 4) Reply with the single word: done
