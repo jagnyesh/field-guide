@@ -38,5 +38,10 @@ describe('Context X-ray: Turn growth', () => {
     const rowsAt = [{ role: 'assistant' as const, text: '', toolUses: [{ tool_use_id: 'r', tool: 'Read', input: { file_path: `${long}/src/big.py` }, text: 'x'.repeat(400) }] }]
     expect(turnGrowth({ measured: 200, rows: rowsAt, attachmentChars: 0, cwd: long }).parts[0].label).toBe('Read src/big.py')
   })
+
+  test('names an MCP call the way the views do', async () => {
+    const rowsAt = [{ role: 'assistant' as const, text: '', toolUses: [{ tool_use_id: 's', tool: 'mcp__lean-ctx__ctx_shell', input: { command: 'pytest -q' }, text: 'x'.repeat(400) }] }]
+    expect(turnGrowth({ measured: 200, rows: rowsAt, attachmentChars: 0 }).parts[0].label).toBe('ctx_shell pytest -q')
+  })
 })
 

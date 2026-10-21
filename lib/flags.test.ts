@@ -199,3 +199,11 @@ describe('Loop Flags: Boundary mock', () => {
   })
 })
 
+describe('Loop Flags: failed edits', () => {
+  test('an edit that failed changed nothing: no Unverified edit, and it does not move the last edit', async () => {
+    const failed = { ...use('e', 'Edit', { file_path: 'src/settings.ini' }, 'File is covered by a Read deny rule'), isError: true as const }
+    expect(kinds(session([failed]))).toEqual([])
+    expect(kinds(session([use('e1', 'Edit', { file_path: 'src/a.py' }), run('p', OUTPUT['all-pass']), failed]))).toEqual([])
+  })
+})
+

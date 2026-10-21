@@ -178,5 +178,28 @@ describe('Transcript Reader', () => {
     expect(turn.steps.map(s => s.summary)).toEqual(['src/settings.ini', 'cat a.txt'])
     expect(turn.steps[0].path).toBe(`${long}/src/settings.ini`)
   })
+
+  test('MCP tools that shell, read, edit, or search count like the built-in ones, shown by their own short name', async () => {
+    const [turn] = buildTimeline([
+      prompt('go'),
+      reply('', [
+        use('s', 'mcp__lean-ctx__ctx_shell', { command: '.venv/bin/python -m pytest -q' }, OUTPUT.quiet),
+        use('r', 'mcp__lean-ctx__ctx_read', { path: 'src/settings.ini', mode: 'full' }),
+        use('e', 'mcp__lean-ctx__ctx_patch', { path: 'src/settings.ini', op: 'set_line', new_text: 'window_seconds = 30' }),
+        use('g', 'mcp__lean-ctx__ctx_search', { pattern: 'window_seconds' }),
+        use('f', 'mcp__filesystem__write_file', { path: 'notes.txt', content: 'x' }),
+        use('o', 'mcp__docs__query', { q: 'x' }),
+      ]),
+    ])
+    expect(turn.steps.map(s => [s.tool, s.kind, s.path ?? s.summary])).toEqual([
+      ['ctx_shell', 'verify', '.venv/bin/python -m pytest -q'],
+      ['ctx_read', 'read', 'src/settings.ini'],
+      ['ctx_patch', 'edit', 'src/settings.ini'],
+      ['ctx_search', 'search', 'window_seconds'],
+      ['write_file', 'edit', 'notes.txt'],
+      ['query', 'other', ''],
+    ])
+    expect(turn.steps[0].run?.failed).toBe(2)
+  })
 })
 

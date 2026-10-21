@@ -1,5 +1,6 @@
 import { classify, commandVerification } from './classify'
 import type { StepKind, Verification } from './classify'
+import { asBuiltIn, shortName } from './mcp'
 import { addedMockTargets } from './mocks'
 import { relativeTo } from './paths'
 import { guessWrites, shellReads } from './shelledit'
@@ -152,7 +153,8 @@ function shellEditOf(use: ToolUse, facts: ProbeFacts | undefined): Step['shellEd
 }
 
 // `expanding` holds the subagents already being expanded above this step, so a cycle stops.
-function toStep(use: ToolUse, ctx: Context, agentId?: string, expanding: ReadonlySet<string> = new Set()): Step {
+function toStep(original: ToolUse, ctx: Context, agentId?: string, expanding: ReadonlySet<string> = new Set()): Step {
+  const use = asBuiltIn(original)
   const facts = ctx.probe(use.tool_use_id)
   const classified = classify(use.tool, use.input, { isReadOnly: facts?.isReadOnly })
   const verified = classified === 'verify' ? verifyFacts(use) : null
@@ -163,7 +165,7 @@ function toStep(use: ToolUse, ctx: Context, agentId?: string, expanding: Readonl
   const path = pathOf(use)
   const step: Step = {
     id: use.tool_use_id,
-    tool: use.tool,
+    tool: shortName(original.tool),
     ...(verified ?? {}),
     kind,
     ...(shellEdit ? { shellEdit } : {}),
@@ -217,6 +219,12 @@ export function isDeveloperPrompt(message: TranscriptMessage): boolean {
   return text.length > 0 && !ENGINE_WRITTEN.some(pattern => pattern.test(text))
 }
 
+// Whether a step changed files: an edit tool that failed changed nothing; a failing shell
+// command may still have written files, so it counts.
+export function changedFiles(step: Step): boolean {
+  return step.kind === 'edit' && !(step.isError && !step.shellEdit)
+}
+
 // Steps in the order they ran, a subagent's right after the Agent step that started it.
 function flatten(steps: readonly Step[]): Step[] {
   return steps.flatMap(step => [step, ...(step.children ? flatten(step.children) : [])])
@@ -233,7 +241,7 @@ export function verificationOf(turn: Turn): Verification | null {
   const steps = flatSteps(turn)
   let lastEdit = -1
   steps.forEach((step, i) => {
-    if (step.kind === 'edit') lastEdit = i
+    if (changedFiles(step)) lastEdit = i
   })
   const after = steps.slice(lastEdit + 1)
   if (after.some(step => step.verification === 'tested')) return 'tested'

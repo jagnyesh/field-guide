@@ -67,7 +67,7 @@ Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on
 - A change someone else makes inside a shell call's time window is credited to that call.
 - Turn growth needs two readings in one process; after a resume it starts again from the next turn.
 - Terminal only; desktop, VS Code, and mobile surfaces are untested.
-- Hotkeys from the band are not wired: the terminal arms hotkeys on buttons, and the band has none.
+- No hotkeys in the MVP: views open with `/guide`. The terminal arms hotkeys only on buttons, and the band has none.
 
 ## Development
 

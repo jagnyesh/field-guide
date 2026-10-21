@@ -5,6 +5,7 @@ import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding, JudgeOptions } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
+import { asBuiltIn } from '../lib/mcp'
 import { relativeTo } from '../lib/paths'
 import { turnGrowth } from '../lib/growth'
 import type { TurnGrowth } from '../lib/growth'
@@ -14,7 +15,7 @@ import { readingLists } from '../lib/readinglist'
 import type { EarlierReads, ReadingEntry } from '../lib/readinglist'
 import { creditChanges, parseStatus } from '../lib/shelledit'
 import type { CompactionMemory, EarlierRead, ProbeRecord } from '../types'
-import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
+import { buildTimeline, changedFiles, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 import type { TestRun } from '../lib/testrun'
 
@@ -211,7 +212,7 @@ function verificationLine(turn: Turn): string | null {
   const verified = verificationOf(turn)
   if (verified === 'tested') return 'Tested after the last edit'
   if (verified === 'checked') return 'Checked after the last edit (lint, type check, or build; no test run)'
-  return flatSteps(turn).some(step => step.kind === 'edit') ? 'Not verified after the last edit' : null
+  return flatSteps(turn).some(changedFiles) ? 'Not verified after the last edit' : null
 }
 
 function entryLine(entry: ReadingEntry): string {
@@ -398,8 +399,11 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // The Live Probe: watch-only, the call and its result pass through untouched.
-  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+  // The Live Probe: watch-only, the call and its result pass through untouched. It follows the
+  // built-in shell and MCP tools that stand in for it (lean-ctx's ctx_shell, for one).
+  on('tool.call', async ($, e, next) => {
+    const isShell = e.tool === 'Bash' || (e.tool.startsWith('mcp__') && asBuiltIn({ tool_use_id: e.tool_use_id, tool: e.tool, input: e as Record<string, unknown> }).tool === 'Bash')
+    if (!isShell) return next(e)
     const start = await $.clock.now()
     const result = await next(e)
     try {
