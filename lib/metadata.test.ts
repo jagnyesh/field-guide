@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
+import { judge } from './flags'
 import { debugLine, stripParams } from './metadata'
 import { buildTimeline } from './transcript'
 import { OUTPUT } from './fixtures/pytest'
@@ -72,5 +73,14 @@ describe('Metadata-only rule: the debug line', () => {
       failingIds: ['tests/test_legacy.py::test_legacy_format', 'tests/test_lookup.py::test_lookup[…]', 'tests/test_ratelimit.py::test_over_limit'],
     })
     expect(line).not.toContain(MARKER)
+  })
+
+  test("carries the latest turn's findings by kind and level only", async () => {
+    const turns = buildTimeline([
+      { role: 'user', text: 'go' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'e', tool: 'Edit', input: { file_path: 'a.py' } }] },
+    ])
+    const line = JSON.parse(debugLine(turns, judge(turns[0]) ?? []))
+    expect(line.findings).toEqual([{ kind: 'unverified-edit', level: 'flag' }])
   })
 })

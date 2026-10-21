@@ -1,5 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
+import { judge } from '../lib/flags'
+import type { Finding } from '../lib/flags'
 import { debugLine } from '../lib/metadata'
 import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
@@ -15,6 +17,10 @@ const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
 // Rebuilt from the transcript at every session start (which a resume and a hot reload both raise)
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
+// The latest turn's findings, judged only once it settled; and the context window's fill.
+let findings: Finding[] = []
+let latestSettled = true
+let contextPercent: number | null = null
 
 async function readRows($: EngineInterface, agentId?: string): Promise<TranscriptMessage[] | undefined> {
   const rows = agentId ? await $.session.messages({ agentId }) : await $.session.messages()
@@ -34,7 +40,62 @@ async function rebuild($: EngineInterface): Promise<void> {
     pending.push(...startedAgents(rows))
   }
   timeline = buildTimeline(main, agentId => subagents.get(agentId))
+  const latest = timeline[timeline.length - 1]
+  latestSettled = latest?.isSettled ?? true
+  findings = (latest && judge(latest)) || []
+  await readUsage($)
   $.ui.invalidate('ui.render')
+}
+
+async function readUsage($: EngineInterface): Promise<void> {
+  try {
+    const usage = await $.session.usage()
+    const percent = usage.context?.percent
+    contextPercent = typeof percent === 'number' ? Math.round(percent) : null
+  } catch {
+    contextPercent = null
+  }
+}
+
+function lastRun(): TestRun | undefined {
+  for (let t = timeline.length - 1; t >= 0; t--) {
+    const steps = flatSteps(timeline[t])
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const run = steps[i].run
+      if (run) return run
+    }
+  }
+  return undefined
+}
+
+// What the hooks beneath drew: the engine's own node when nothing else is there (seen live, #3 checks).
+function isDrawnBeneath(tree: unknown): boolean {
+  return typeof tree === 'object' && tree !== null && (tree as { type?: unknown }).type !== 'engine'
+}
+
+let statusText: string | undefined
+
+function setStatus($: EngineInterface, text: string | undefined): void {
+  if (text === statusText) return
+  statusText = text
+  $.ui.status(text)
+}
+
+function fit(text: string, columns: number): string {
+  return text.length <= columns ? text : text.slice(0, Math.max(1, columns - 1)) + '…'
+}
+
+// The band's one line: a flag once the latest turn settled, otherwise live facts; null for nothing.
+function bandLine(isWorking: boolean): { text: string; isFlag: boolean } | null {
+  const flag = findings.find(f => f.level === 'flag')
+  if (flag && latestSettled && !isWorking) {
+    return { text: `⚑ ${flag.title} · Turn ${timeline.length} · /guide trace`, isFlag: true }
+  }
+  const facts: string[] = []
+  const run = lastRun()
+  if (run) facts.push(`${run.runner} ${runCounts(run)}`)
+  if (contextPercent !== null) facts.push(`context ${contextPercent}%`)
+  return facts.length ? { text: `Field Guide · ${facts.join(' · ')}`, isFlag: false } : null
 }
 
 function runCounts(run: TestRun): string {
@@ -56,7 +117,7 @@ function stepLine(step: Step): string {
 
 async function logDebug($: EngineInterface): Promise<void> {
   if ((await $.env.get('FIELD_GUIDE_DEBUG')) !== '1') return
-  $.ui.log(`field-guide: ${debugLine(timeline)}`, { to: 'debug' })
+  $.ui.log(`field-guide: ${debugLine(timeline, findings)}`, { to: 'debug' })
 }
 
 function latestTurn(): Turn | undefined {
@@ -102,6 +163,27 @@ export const register: Register = on => {
     if (!view) return { text: `Field Guide views: ${Object.keys(VIEWS).join(', ')}.` }
     await $.ui.open({ id: view.id, title: view.title })
     return { text: `Field Guide: opened ${view.title}.` }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
+    const line = bandLine(e.props.isWorking)
+    // A teaching mod never crowds out a survey or another mod's band, safety mods above all;
+    // a flag it can't show there goes to the status line instead.
+    if (e.props.hasSurvey || isDrawnBeneath(below)) {
+      setStatus($, line?.isFlag ? line.text : undefined)
+      return below
+    }
+    setStatus($, undefined)
+    if (!line) return below
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box>
+        <Text color={line.isFlag ? 'yellow' : undefined} dimColor={!line.isFlag}>
+          {fit(line.text, e.props.bodyColumns)}
+        </Text>
+      </Box>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: LEDGER }, ($, e) => {

@@ -33,6 +33,14 @@ if scenario == "pytest":
     check(len(runs) == 1 and runs[0]["runner"] == "pytest", f"one pytest run was read ({len(runs)})")
     check(bool(runs) and (runs[0]["passed"], runs[0]["failed"]) == (3, 2), f"counts match the fixture's baseline ({runs[0] if runs else None})")
 
+kinds = [finding["kind"] for finding in last.get("findings", [])]
+
+if scenario == "unverified":
+    check("unverified-edit" in kinds, f"Unverified edit is raised ({kinds})")
+
+if scenario == "verified":
+    check("unverified-edit" not in kinds, f"Unverified edit is not raised when tests ran after the edit ({kinds})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

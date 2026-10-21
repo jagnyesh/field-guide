@@ -10,6 +10,8 @@ export type ToolUse = {
   readonly text?: string
   readonly isError?: true
   readonly agentId?: string
+  // The tool's typed record; for Agent, `status` says whether it ran or was backgrounded.
+  readonly result?: unknown
 }
 
 export type TranscriptMessage = {
@@ -34,6 +36,8 @@ export type Step = {
   // On an Agent step: the kind of subagent it started, and that subagent's steps.
   readonly agentType?: string
   readonly children?: readonly Step[]
+  // An Agent step whose subagent was backgrounded: the turn waits for its hand-back.
+  readonly isBackground?: true
 }
 
 // A subagent's transcript by its id, as the engine keeps it; undefined when it can't be read.
@@ -78,7 +82,8 @@ function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run'> 
   return run ? { kind: 'verify', verification, run } : { kind: 'run' }
 }
 
-function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string): Step {
+// `expanding` holds the subagents already being expanded above this step, so a cycle stops.
+function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string, expanding: ReadonlySet<string> = new Set()): Step {
   const kind = classify(use.tool, use.input)
   const step: Step = {
     id: use.tool_use_id,
@@ -91,15 +96,24 @@ function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string): Step {
     ...(agentId ? { agentId } : {}),
   }
   if (step.kind !== 'delegate' || !use.agentId) return step
-  const rows = subagents(use.agentId)
+  const rows = expanding.has(use.agentId) ? undefined : subagents(use.agentId)
+  const isBackground = (use.result as { status?: string } | undefined)?.status === 'async_launched'
   const childId = use.agentId
   const agentType = typeof use.input.subagent_type === 'string' ? use.input.subagent_type : 'subagent'
-  return { ...step, agentId: childId, agentType, children: rows ? toolUses(rows).map(child => toStep(child, subagents, childId)) : [] }
+  return {
+    ...step,
+    agentId: childId,
+    agentType,
+    children: rows ? toolUses(rows).map(child => toStep(child, subagents, childId, new Set([...expanding, childId]))) : [],
+    ...(isBackground ? { isBackground: true as const } : {}),
+  }
 }
 
 export type Turn = {
   readonly index: number
   readonly steps: Step[]
+  // False while a backgrounded subagent this turn started has not handed back.
+  readonly isSettled: boolean
 }
 
 // The engine writes these rows as user messages; none of them is the developer asking for work.
@@ -115,9 +129,15 @@ export function isDeveloperPrompt(message: TranscriptMessage): boolean {
 }
 
 // Steps in the order they ran, a subagent's right after the Agent step that started it.
-export function flatSteps(turn: Turn): Step[] {
-  return turn.steps.flatMap(step => [step, ...(step.children ? flatSteps({ index: turn.index, steps: [...step.children] }) : [])])
+function flatten(steps: readonly Step[]): Step[] {
+  return steps.flatMap(step => [step, ...(step.children ? flatten(step.children) : [])])
 }
+
+export function flatSteps(turn: Turn): Step[] {
+  return flatten(turn.steps)
+}
+
+const HANDED_BACK = /<task-id>([^<]+)<\/task-id>/g
 
 // Tested or Checked by what ran after the turn's last edit (or anywhere, with no edit); null for neither.
 export function verificationOf(turn: Turn): Verification | null {
@@ -138,10 +158,12 @@ export function startedAgents(messages: readonly TranscriptMessage[]): string[] 
 }
 
 export function buildTimeline(messages: readonly TranscriptMessage[], subagents: SubagentRows = () => undefined): Turn[] {
-  const turns: Turn[] = []
+  const turns: { index: number; steps: Step[] }[] = []
+  const handedBack = new Set<string>()
   for (const message of messages) {
     if (message.role === 'user') {
       if (isDeveloperPrompt(message)) turns.push({ index: turns.length, steps: [] })
+      for (const match of message.text.matchAll(HANDED_BACK)) handedBack.add(match[1])
       continue
     }
     const turn = turns[turns.length - 1]
@@ -150,5 +172,9 @@ export function buildTimeline(messages: readonly TranscriptMessage[], subagents:
       turn.steps.push(toStep(use, subagents))
     }
   }
-  return turns
+  // Only the main loop's own Agent steps hand back here; a nested one hands back to its parent subagent.
+  return turns.map(turn => ({
+    ...turn,
+    isSettled: turn.steps.every(step => !step.isBackground || (step.agentId !== undefined && handedBack.has(step.agentId))),
+  }))
 }

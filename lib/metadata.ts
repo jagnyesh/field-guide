@@ -1,3 +1,4 @@
+import type { Finding } from './flags'
 import type { TestRun } from './testrun'
 import { verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
@@ -35,8 +36,9 @@ function stepMetadata(step: Step): StepMetadata {
 
 // Everything that leaves the transcript goes through here (see ADR 0003): only
 // fields named above are copied, so a new field on Step stays out until added on purpose.
-export function debugLine(turns: readonly Turn[]): string {
+export function debugLine(turns: readonly Turn[], findings: readonly Finding[] = []): string {
   return JSON.stringify({
     turns: turns.map(turn => ({ index: turn.index, verification: verificationOf(turn), steps: turn.steps.map(stepMetadata) })),
+    findings: findings.map(({ kind, level }) => ({ kind, level })),
   })
 }

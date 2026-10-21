@@ -130,4 +130,20 @@ describe('Transcript Reader', () => {
     )
     expect(verificationOf(turns[0])).toBe('tested')
   })
+
+  test('a turn is not settled while a backgrounded subagent has not handed back; a foreground one never holds it open', async () => {
+    const launched = { ...use('a', 'Agent', { description: 'Read a' }), agentId: 'a8', result: { status: 'async_launched', agentId: 'a8' } }
+    const finished = { ...use('a', 'Agent', { description: 'Read a' }), agentId: 'a9', result: { status: 'completed' } }
+    const start = [prompt('go'), reply('', [launched]), { role: 'user' as const, text: '', toolResults: [{ tool_use_id: 'a' }] }, reply('still running')]
+    expect(buildTimeline(start)[0].isSettled).toBe(false)
+    const handedBack = [...start, { role: 'user' as const, text: '<task-notification>\n<task-id>a8</task-id>\n<tool-use-id>a</tool-use-id>' }, reply('done')]
+    expect(buildTimeline(handedBack)[0].isSettled).toBe(true)
+    expect(buildTimeline([prompt('go'), reply('', [finished]), reply('done')])[0].isSettled).toBe(true)
+  })
+
+  test('a subagent that turns up inside its own transcript is expanded once, not forever', async () => {
+    const loop = [prompt('go'), reply('', [{ ...use('a', 'Agent', { description: 'x' }), agentId: 'a1' }])]
+    const [turn] = buildTimeline(loop, () => loop)
+    expect(turn.steps[0].children?.map(s => [s.id, s.children?.length ?? 0])).toEqual([['a', 0]])
+  })
 })

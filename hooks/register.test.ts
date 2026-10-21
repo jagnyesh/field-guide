@@ -147,4 +147,82 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /Tested after the last edit/ })).toBeDefined()
     await ui.unmount()
   })
+
+  const BAND = (bodyColumns = 144) => ({
+    plugin: 'field-guide',
+    surface: 'terminal' as const,
+    component: 'AbovePrompt' as const,
+    props: { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns, scroll: { offset: 0, bodyRows: 4 }, view: {} },
+  })
+  const EDITED = [
+    { role: 'user', text: 'change the limit', toolUses: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'e1', tool: 'Edit', input: { file_path: 'src/ratelimit.py' }, text: 'ok' }] },
+    { role: 'assistant', text: 'done', toolUses: [] },
+  ]
+
+  test('after a Settled turn with an edit and no verification, the band raises Unverified edit', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('while a backgrounded subagent has not handed back, the band shows only live facts', async ($, on) => {
+    standIn(on, e => (e.agentId ? [] : [
+      ...EDITED.slice(0, 2),
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [{ tool_use_id: 'a', tool: 'Agent', input: { description: 'x' }, agentId: 'a1', result: { status: 'async_launched', agentId: 'a1' }, text: 'launched' }],
+      },
+    ]))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /context 25%/ })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('with another plugin drawing in the band, Field Guide draws nothing there and the flag moves to the status line', async ($, on) => {
+    const other = { type: 'Text', children: ['another mod is holding a command'] }
+    const engine = standIn(on, EDITED, { band: other })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /another mod is holding a command/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(engine.statuses.some(text => text?.includes('Unverified edit'))).toBe(true)
+    await band.unmount()
+  })
+
+  test('while a survey holds the band, Field Guide gives way', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const survey = BAND()
+    const band = await $.ui.mount({ ...survey, props: { ...survey.props, hasSurvey: true } })
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    await band.unmount()
+  })
+
+  test('the band validates at 80 and 144 columns and never runs past its width', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    for (const columns of [144, 80, 24]) {
+      const band = await $.ui.mount(BAND(columns))
+      const line = await band.find({ type: 'Text', text: /Unverified|…/ })
+      expect(line).toBeDefined()
+      expect((line?.text ?? '').length).toBeLessThanOrEqual(columns)
+      await band.unmount()
+    }
+  })
+
+  test('flags never reach the model: the /guide reply names only the view', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    for (const args of ['trace', 'ledger', 'nonsense']) {
+      const reply = await $.command.run({ ...RUN, args })
+      expect(reply.text ?? '').not.toMatch(/Unverified|flag|edit/i)
+      expect(reply.context).toBeUndefined()
+    }
+  })
 })
