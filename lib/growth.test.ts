@@ -32,4 +32,11 @@ describe('Context X-ray: Turn growth', () => {
     expect(turnGrowth({ measured: 5_000, rows, attachmentChars: 1_200 }).unattributed).toBe(5_000 - 3_660)
     expect(turnGrowth({ measured: 1_000, rows, attachmentChars: 0 }).unattributed).toBe(1_000 - 3_360)
   })
+
+  test('labels show paths relative to the session folder', async () => {
+    const long = '/srv/a/long/session/folder/that/goes/on/for/a/good/while/fixture'
+    const rowsAt = [{ role: 'assistant' as const, text: '', toolUses: [{ tool_use_id: 'r', tool: 'Read', input: { file_path: `${long}/src/big.py` }, text: 'x'.repeat(400) }] }]
+    expect(turnGrowth({ measured: 200, rows: rowsAt, attachmentChars: 0, cwd: long }).parts[0].label).toBe('Read src/big.py')
+  })
 })
+

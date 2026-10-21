@@ -5,6 +5,7 @@ import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding, JudgeOptions } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
+import { relativeTo } from '../lib/paths'
 import { turnGrowth } from '../lib/growth'
 import type { TurnGrowth } from '../lib/growth'
 import { fixedLoad } from '../lib/xray'
@@ -31,6 +32,9 @@ const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
 // Rebuilt from the transcript at every session start (which a resume and a hot reload both raise)
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
+// The session's folder: paths under it show relative to it.
+let sessionCwd = ''
+const rel = (text: string) => relativeTo(sessionCwd, text)
 // The project's choices, from the plugin's options (a change reloads the module).
 let judgeOptions: JudgeOptions = {}
 // Reads from before the last compaction, the compactions so far, and the latest summary's text
@@ -91,7 +95,7 @@ async function rebuild($: EngineInterface): Promise<void> {
     pending.push(...startedAgents(rows))
   }
   const facts = await read($, probe)
-  timeline = buildTimeline(main, agentId => subagents.get(agentId), id => facts[id])
+  timeline = buildTimeline(main, agentId => subagents.get(agentId), id => facts[id], sessionCwd)
   const memory = await loadMemory($)
   earlier = { reads: memory.earlierReads, reattached: memory.reattached }
   compactionCount = memory.compactions.length
@@ -150,7 +154,7 @@ function findingList($: EngineInterface, e: Parameters<EngineInterface['ui']['re
     .filter(finding => finding.view === view)
     .map(finding => (
       <Box key={`finding:${finding.kind}`} flexDirection="column">
-        <Text color={finding.level === 'flag' ? 'yellow' : undefined}>{`⚑ ${finding.title}: ${finding.reason}`}</Text>
+        <Text color={finding.level === 'flag' ? 'yellow' : undefined}>{`${finding.level === 'flag' ? '⚑' : '○'} ${finding.title}: ${finding.reason}`}</Text>
         <Button key={`tell:${finding.kind}`} label="Tell Claude" onPress={() => $.prompt.fill({ text: handOff(finding) })} />
       </Box>
     ))
@@ -212,9 +216,9 @@ function verificationLine(turn: Turn): string | null {
 
 function entryLine(entry: ReadingEntry): string {
   const by = entry.agent ? ` (by ${entry.agent})` : ''
-  if (entry.kind === 'search') return `  searched  ${entry.query}${by}`
+  if (entry.kind === 'search') return `  searched  ${rel(entry.query)}${by}`
   const mark = entry.compaction === 're-attached' ? ' · re-attached after compaction' : entry.compaction ? ' · read before compaction' : ''
-  return `  read      ${entry.path}${by}${mark}`
+  return `  read      ${rel(entry.path)}${by}${mark}`
 }
 
 // After each main-loop turn: what it added, measured, split across the rows it added.
@@ -227,7 +231,7 @@ async function recordGrowth($: EngineInterface): Promise<void> {
     lastGrowth = { kind: 'compacted', before: record?.tokensBefore, after: record?.tokensAfter }
   } else if (previous) {
     const rows = mainRows.slice(previous.rows)
-    lastGrowth = { kind: 'growth', growth: turnGrowth({ measured: now.tokens - previous.tokens, rows, attachmentChars: pendingAttachmentChars }) }
+    lastGrowth = { kind: 'growth', growth: turnGrowth({ measured: now.tokens - previous.tokens, rows, attachmentChars: pendingAttachmentChars, cwd: sessionCwd }) }
   }
   readings.push(now)
   pendingAttachmentChars = 0
@@ -301,7 +305,7 @@ const REATTACHED_PATH = /"file_path"\s*:\s*"([^"]+)"/
 function shellEditLabel(step: Step): string {
   if (!step.shellEdit) return ''
   const how = step.shellEdit.exact ? 'exact' : 'best guess'
-  return ` · via shell, ${how}: ${step.shellEdit.paths.join(', ')} · not in the diff views`
+  return ` · via shell, ${how}: ${step.shellEdit.paths.map(rel).join(', ')} · not in the diff views`
 }
 
 function stepLine(step: Step): string {
@@ -383,6 +387,7 @@ export const register: Register = (on, options) => {
   judgeOptions = { boundaryMockAsFlag: options.boundaryMockAsFlag === true, ...(modules.length ? { boundaryModules: modules } : {}) }
 
   on('session.start', async ($, e, next) => {
+    sessionCwd = e.cwd
     const result = await next(e)
     try {
       await $.command.register({ name: 'guide', description: 'Field Guide: open a view', argumentHint: 'trace | ledger | xray | autopsy' })
@@ -476,7 +481,7 @@ export const register: Register = (on, options) => {
         : lastGrowth?.kind === 'growth'
           ? [
               <Text key="growth" bold>{`Last turn added ${tokens(lastGrowth.growth.measured)} tokens (measured)`}</Text>,
-              ...lastGrowth.growth.parts.map((part, i) => <Text key={`growth:${i}`}>{row(part.label, part.approxTokens)}</Text>),
+              ...lastGrowth.growth.parts.map((part, i) => <Text key={`growth:${i}`}>{row(rel(part.label), part.approxTokens)}</Text>),
               <Text key="growth:left" dimColor>
                 {row('Unattributed', lastGrowth.growth.unattributed, ' · reminders, formatting, thinking')}
               </Text>,
@@ -655,10 +660,20 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         <Text bold>Turn {turn.index + 1}</Text>
+        {turn.steps.flatMap(step => [
+          <Text key={step.id} color={step.isError ? 'red' : undefined}>
+            {stepLine(step)}
+          </Text>,
+          ...(step.children ?? []).map(child => (
+            <Text key={child.id} dimColor color={child.isError ? 'red' : undefined}>
+              {`  ↳ ${step.agentType} › ${stepLine(child)}`}
+            </Text>
+          )),
+        ])}
         {verificationLine(turn) && <Text dimColor>{verificationLine(turn)}</Text>}
         {turn.index === timeline.length - 1 && findingList($, e, 'trace')}
         {readingLists(turn, timeline, earlier).flatMap(list => [
-          <Text key={`list:${list.file}`} bold>{`Reading List · ${list.file}`}</Text>,
+          <Text key={`list:${list.file}`} bold>{`Reading List · ${rel(list.file)}`}</Text>,
           ...(list.entries.length
             ? list.entries.map((entry, i) => (
                 <Text key={`list:${list.file}:${i}`} dimColor>
@@ -671,16 +686,7 @@ export const register: Register = (on, options) => {
                 </Text>,
               ]),
         ])}
-        {turn.steps.flatMap(step => [
-          <Text key={step.id} color={step.isError ? 'red' : undefined}>
-            {stepLine(step)}
-          </Text>,
-          ...(step.children ?? []).map(child => (
-            <Text key={child.id} dimColor color={child.isError ? 'red' : undefined}>
-              {`  ↳ ${step.agentType} › ${stepLine(child)}`}
-            </Text>
-          )),
-        ])}
+
       </Box>
     )
   })

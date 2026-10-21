@@ -13,9 +13,11 @@ export type GrowthInput = {
   // The turn's transcript rows, read for lengths only.
   readonly rows: readonly TranscriptMessage[]
   readonly attachmentChars: number
+  // The session's folder: labels show paths under it relative to it.
+  readonly cwd?: string
 }
 
-export function turnGrowth({ measured, rows, attachmentChars }: GrowthInput): TurnGrowth {
+export function turnGrowth({ measured, rows, attachmentChars, cwd = '' }: GrowthInput): TurnGrowth {
   const parts: GrowthPart[] = []
   let prompt = 0
   let text = 0
@@ -26,7 +28,7 @@ export function turnGrowth({ measured, rows, attachmentChars }: GrowthInput): Tu
     }
     text += row.text.length
     for (const use of row.toolUses ?? []) {
-      parts.push({ label: `${use.tool} ${summarize(use)}`.trimEnd(), approxTokens: approxTokens(use.text?.length ?? 0) })
+      parts.push({ label: `${use.tool} ${summarize(use, cwd)}`.trimEnd(), approxTokens: approxTokens(use.text?.length ?? 0) })
     }
   }
   if (attachmentChars > 0) parts.push({ label: 'Attachments', approxTokens: approxTokens(attachmentChars) })

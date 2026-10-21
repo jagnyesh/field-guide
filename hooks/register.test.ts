@@ -419,8 +419,8 @@ describe('Loop Trace pane', () => {
     await $.prompt.attachment({ type: 'file', text: 'Called the Read tool with the following input: {"file_path":"/work/a.txt"}\nalpha', origin: { kind: 'engine' } })
     await $.turn.complete(DONE)
     const trace = await $.ui.mount(TRACE)
-    expect(await trace.find({ type: 'Text', text: /read\s+\/work\/a\.txt · re-attached after compaction/ })).toBeDefined()
-    expect(await trace.find({ type: 'Text', text: /read\s+\/work\/b\.txt · read before compaction/ })).toBeDefined()
+    expect(await trace.find({ type: 'Text', text: /read\s+a\.txt · re-attached after compaction/ })).toBeDefined()
+    expect(await trace.find({ type: 'Text', text: /read\s+b\.txt · read before compaction/ })).toBeDefined()
     await trace.unmount()
     await $.command.run({ ...RUN, args: 'autopsy' })
     const autopsy = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-autopsy', props: { title: 'Compaction Autopsy', ...PANE_PROPS } })
@@ -561,6 +561,36 @@ describe('Loop Trace pane', () => {
     const ui = await $.ui.mount(TRACE)
     expect(await ui.find({ type: 'Text', text: /via shell, exact: src\/settings\.ini/ })).toBeDefined()
     await ui.unmount()
+  })
+
+  test('Loop Trace shows paths relative to the session folder, steps first, and marks notes apart from flags', async ($, on) => {
+    standIn(on, [
+      { role: 'user', text: 'tidy settings', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'r', tool: 'Read', input: { file_path: '/work/src/settings.ini' }, text: 'x' },
+          { tool_use_id: 'e', tool: 'Edit', input: { file_path: '/work/src/settings.ini' }, text: 'ok' },
+        ],
+      },
+    ])
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /^read\s+Read  src\/settings\.ini$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Reading List · src\/settings\.ini$/ })).toBeDefined()
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn.indexOf('Read  src/settings.ini')).toBeLessThan(drawn.indexOf('Reading List'))
+    expect(drawn).not.toContain('/work/')
+    await ui.unmount()
+  })
+
+  test('the Ledger marks a note with ○ and a flag with ⚑', async ($, on) => {
+    standIn(on, MOCKED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ledger = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    expect(await ledger.find({ type: 'Text', text: /^○ Boundary mock/ })).toBeDefined()
+    await ledger.unmount()
   })
 })
 

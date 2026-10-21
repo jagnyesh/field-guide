@@ -166,5 +166,17 @@ describe('Transcript Reader', () => {
       buildTimeline([prompt('go'), reply('', [use('c', 'Bash', { command: 'cat a.txt' })])], undefined, () => ({ isReadOnly }))[0].steps[0].kind
     expect([cat(true), cat(false)]).toEqual(['read', 'run'])
   })
+
+  test('summaries show paths relative to the session folder, before they are cut to length', async () => {
+    const long = '/srv/some/very/long/session/folder/that/goes/on/and/on/for/a/while/fixture'
+    const [turn] = buildTimeline(
+      [prompt('go'), reply('', [use('r', 'Read', { file_path: `${long}/src/settings.ini` }), use('c', 'Bash', { command: `cat ${long}/a.txt` })])],
+      undefined,
+      undefined,
+      long,
+    )
+    expect(turn.steps.map(s => s.summary)).toEqual(['src/settings.ini', 'cat a.txt'])
+    expect(turn.steps[0].path).toBe(`${long}/src/settings.ini`)
+  })
 })
 

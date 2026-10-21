@@ -1,6 +1,7 @@
 import { classify, commandVerification } from './classify'
 import type { StepKind, Verification } from './classify'
 import { addedMockTargets } from './mocks'
+import { relativeTo } from './paths'
 import { guessWrites, shellReads } from './shelledit'
 import { parseTestRun } from './testrun'
 import type { TestRun } from './testrun'
@@ -67,7 +68,7 @@ export type ProbeFacts = {
 
 export type ProbeLookup = (toolUseId: string) => ProbeFacts | undefined
 
-type Context = { readonly subagents: SubagentRows; readonly probe: ProbeLookup }
+type Context = { readonly subagents: SubagentRows; readonly probe: ProbeLookup; readonly cwd: string }
 
 const SUMMARY_LIMIT = 80
 
@@ -87,11 +88,11 @@ const SUMMARY_FIELD: Readonly<Record<string, string>> = {
   WebSearch: 'query',
 }
 
-export function summarize(use: ToolUse): string {
+export function summarize(use: ToolUse, cwd = ''): string {
   const field = SUMMARY_FIELD[use.tool]
   const value = field ? use.input[field] : undefined
   if (typeof value !== 'string') return ''
-  const line = value.split('\n')[0].trim()
+  const line = relativeTo(cwd, value.split('\n')[0].trim())
   return line.length > SUMMARY_LIMIT ? line.slice(0, SUMMARY_LIMIT - 1) + '…' : line
 }
 
@@ -172,7 +173,7 @@ function toStep(use: ToolUse, ctx: Context, agentId?: string, expanding: Readonl
       : {}),
     ...(kind === 'edit' && addsMarker(use) ? { addsMarker: true as const } : {}),
     ...(kind === 'edit' && use.tool !== 'Bash' ? mockFacts(use) : {}),
-    summary: summarize(use),
+    summary: summarize(use, ctx.cwd),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
     ...(agentId ? { agentId } : {}),
@@ -249,8 +250,10 @@ export function buildTimeline(
   messages: readonly TranscriptMessage[],
   subagents: SubagentRows = () => undefined,
   probe: ProbeLookup = () => undefined,
+  // The session's folder: summaries show paths under it relative to it.
+  cwd = '',
 ): Turn[] {
-  const ctx: Context = { subagents, probe }
+  const ctx: Context = { subagents, probe, cwd }
   const turns: { index: number; steps: Step[]; isInterrupted?: true }[] = []
   const handedBack = new Set<string>()
   for (const message of messages) {
