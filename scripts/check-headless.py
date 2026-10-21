@@ -77,6 +77,14 @@ if scenario == "compaction":
     check(marks.get("a.txt") == "re-attached", f"a.txt, read with the Read tool, is re-attached ({marks})")
     check(marks.get("b.txt") == "read before", f"b.txt, read through the shell, is marked read before compaction ({marks})")
 
+if scenario == "xray":
+    xrays = [json.loads(line[line.index("field-guide-xray: ") + len("field-guide-xray: "):]) for line in open(log, errors="replace") if "field-guide-xray: " in line]
+    check(len(xrays) == 1, f"/guide xray read the breakdown ({len(xrays)})")
+    x = xrays[-1] if xrays else {"categories": [], "total": 0, "memory": []}
+    names = [c["name"] for c in x["categories"]]
+    check(x["total"] > 0 and len(names) >= 2, f"the fixed load has categories from the real breakdown ({names}, total {x['total']})")
+    check(not any("message" in n.lower() for n in names), "the conversation is left out")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

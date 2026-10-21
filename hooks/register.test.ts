@@ -428,5 +428,29 @@ describe('Loop Trace pane', () => {
     expect(await autopsy.find({ type: 'Text', text: /This session is being continued/ })).toBeDefined()
     await autopsy.unmount()
   })
+
+  test('/guide xray shows the fixed load from the free estimate, memory files with their imports, and sections, all marked ≈', async ($, on) => {
+    const category = (name: string, tokens: number, kind = 'used') => ({ name, tokens, color: 'x', isDeferred: false, kind })
+    const breakdown = {
+      categories: [category('System tools', 11_800), category('System prompt', 3_100), category('Memory files', 700), category('Messages', 9_000), category('Free space', 1, 'free')],
+      memoryFiles: [{ path: '/work/CLAUDE.md', type: 'Project', tokens: 700 }],
+      mcpTools: [{ name: 'mcp__ctx__read', serverName: 'ctx', tokens: 2_700, isLoaded: true }],
+    }
+    const ancestors = [{ dir: '/work', name: 'CLAUDE.md', content: '', parts: [{ path: '/work/CLAUDE.md', content: 'a' }, { path: '/work/docs/style.md', content: 'y'.repeat(800) }] }]
+    const engine = standIn(on, [], { breakdown, ancestors })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.prompt.section({ name: 'mcp_instructions', text: 'x'.repeat(9_000) })
+    await $.command.run({ ...RUN, args: 'xray' })
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-xray', props: { title: 'Context X-ray', ...PANE_PROPS } })
+    expect(await ui.find({ type: 'Text', text: /^Fixed load ≈ 15\.6k tokens, paid on every request$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /System tools\s+≈ 11\.8k/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /ctx\s+≈ 2\.7k \(1 tool\)/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\/work\/CLAUDE\.md\s+≈ 700 · Project/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /imports \/work\/docs\/style\.md\s+≈ 200/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /mcp_instructions\s+≈ 2\.3k/ })).toBeDefined()
+    expect(engine.usageArgs.some(args => (args as { breakdown?: string }).breakdown === 'full')).toBe(false)
+    expect(engine.usageArgs.some(args => (args as { breakdown?: string }).breakdown === 'summary')).toBe(true)
+    await ui.unmount()
+  })
 })
 

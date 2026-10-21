@@ -8,18 +8,22 @@ export type StandIn = {
   statuses: (string | undefined)[]
   filled: string[]
   processes: { argv: string[]; timeoutMs?: number }[]
+  usageArgs: unknown[]
 }
 
 // `rows` is the main transcript, or a function answering each `session.messages` call.
 export type StandInOptions = {
   band?: unknown
+  // The /context breakdown the engine would estimate, and the instruction files it would find.
+  breakdown?: unknown
+  ancestors?: unknown[]
   // What `git status --porcelain -z -uall` prints after a shell call, and each file's mtime.
   status?: string
   mtimes?: Record<string, number>
 }
 
 export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) => unknown[]) = [], options: StandInOptions = {}): StandIn {
-  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [], processes: [] }
+  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [], processes: [], usageArgs: [] }
   mock.store(on)
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.messages', (_: unknown, e: { agentId?: string }) => ({ value: typeof rows === 'function' ? rows(e ?? {}) : rows }))
@@ -54,7 +58,13 @@ export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) =>
     seen.filled.push(e.text)
     return { isFilled: true }
   })
-  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25 }, rateLimits: [] } }))
+  on('session.usage', (_: unknown, e: { breakdown?: string } | undefined) => {
+    seen.usageArgs.push(e ?? {})
+    const breakdown = e?.breakdown && options.breakdown ? { breakdown: options.breakdown } : {}
+    return { value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25, ...breakdown }, rateLimits: [] } }
+  })
+  on('fs.ancestors', () => ({ value: options.ancestors ?? [] }))
+  on('prompt.section', (_: unknown, e: { text: string | null }) => ({ text: e.text }))
   on('command.register', () => ({ value: undefined }))
   // Nothing of the engine's own is drawn in the band unless a test says so.
   on('ui.render', { component: 'AbovePrompt' }, () => options.band ?? { type: 'engine', ref: 0 })

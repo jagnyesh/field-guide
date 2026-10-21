@@ -5,6 +5,8 @@ import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
+import { fixedLoad } from '../lib/xray'
+import type { BreakdownInput, FixedLoad } from '../lib/xray'
 import { readingLists } from '../lib/readinglist'
 import type { EarlierReads, ReadingEntry } from '../lib/readinglist'
 import { creditChanges, parseStatus } from '../lib/shelledit'
@@ -16,7 +18,9 @@ import type { TestRun } from '../lib/testrun'
 const TRACE = 'field-guide-trace'
 const LEDGER = 'field-guide-ledger'
 const AUTOPSY = 'field-guide-autopsy'
+const XRAY = 'field-guide-xray'
 const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
+  xray: { id: XRAY, title: 'Context X-ray' },
   trace: { id: TRACE, title: 'Loop Trace' },
   ledger: { id: LEDGER, title: 'Red/Green Ledger' },
   autopsy: { id: AUTOPSY, title: 'Compaction Autopsy' },
@@ -31,6 +35,9 @@ let earlier: EarlierReads = { reads: [], reattached: [] }
 let compactionCount = 0
 let summaryText: string | null = null
 const SUMMARY_START = /^This session is being continued from a previous conversation/
+// System-prompt sections by name and text length, as the engine composed them; never their text.
+const sectionChars = new Map<string, number>()
+let xray: FixedLoad | null = null
 
 // Which flags were toasted, kept by the host so a hot reload doesn't toast them again.
 const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as string[])
@@ -196,6 +203,27 @@ function entryLine(entry: ReadingEntry): string {
   return `  read      ${entry.path}${by}${mark}`
 }
 
+// The free local estimate only: the exact breakdown sends token-count requests (#14 offers it on purpose).
+async function readXray($: EngineInterface): Promise<void> {
+  const usage = await $.session.usage({ breakdown: 'summary' })
+  const breakdown = usage.context.breakdown as BreakdownInput | undefined
+  if (!breakdown) return
+  const ancestors = await $.fs.ancestors({ names: ['CLAUDE.md', 'CLAUDE.local.md'] })
+  xray = fixedLoad({ breakdown, ancestors, sections: [...sectionChars].map(([name, chars]) => ({ name, chars })) })
+  $.ui.invalidate('ui.render')
+  // Key names avoid "token": the engine's debug log redacts such fields.
+  if ((await $.env.get('FIELD_GUIDE_DEBUG')) === '1') {
+    const summary = {
+      categories: xray.categories.map(c => ({ name: c.name, size: c.tokens })),
+      total: xray.total,
+      mcpServers: xray.mcpServers.length,
+      memory: xray.memory.map(m => ({ path: m.path, imports: m.imports.length })),
+      sections: xray.sections.length,
+    }
+    $.ui.log(`field-guide-xray: ${JSON.stringify(summary)}`, { to: 'debug' })
+  }
+}
+
 function tokens(n: number | undefined): string {
   return n === undefined ? '?' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
@@ -323,7 +351,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     try {
-      await $.command.register({ name: 'guide', description: 'Field Guide: open a view', argumentHint: 'trace | ledger | autopsy' })
+      await $.command.register({ name: 'guide', description: 'Field Guide: open a view', argumentHint: 'trace | ledger | xray | autopsy' })
       await rebuild($)
     } catch (err) {
       fail($, 'session.start', err)
@@ -390,6 +418,52 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('prompt.section', async ($, e, next) => {
+    const result = await next(e)
+    sectionChars.set(e.name, result.text?.length ?? 0)
+    return result
+  })
+
+  on('ui.render', { component: 'Pane', requestId: XRAY }, ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    if (!xray) {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>No context breakdown yet: open it again after the first reply.</Text>
+        </Box>
+      )
+    }
+    const row = (label: string, value: number, tail = '') => `  ${label.padEnd(28)} ≈ ${tokens(value)}${tail}`
+    return (
+      <Box flexDirection="column">
+        <Text bold>{`Fixed load ≈ ${tokens(xray.total)} tokens, paid on every request`}</Text>
+        {xray.categories.map(c => (
+          <Text key={`cat:${c.name}`}>{row(c.name, c.tokens)}</Text>
+        ))}
+        {xray.mcpServers.length > 0 && <Text bold>MCP servers</Text>}
+        {xray.mcpServers.map(m => (
+          <Text key={`mcp:${m.server}`}>{row(m.server, m.tokens, ` (${m.tools} tool${m.tools === 1 ? '' : 's'})`)}</Text>
+        ))}
+        {xray.memory.length > 0 && <Text bold>Memory files</Text>}
+        {xray.memory.flatMap(m => [
+          <Text key={`mem:${m.path}`}>{row(m.path, m.tokens, ` · ${m.type}`)}</Text>,
+          ...m.imports.map(i => (
+            <Text key={`mem:${m.path}:${i.path}`} dimColor>
+              {`    imports ${i.path.padEnd(20)} ≈ ${tokens(i.approxTokens)}`}
+            </Text>
+          )),
+        ])}
+        {xray.sections.length > 0 && <Text bold>System-prompt sections</Text>}
+        {xray.sections.map(sec => (
+          <Text key={`sec:${sec.name}`} dimColor>
+            {row(sec.name, sec.approxTokens)}
+          </Text>
+        ))}
+        <Text dimColor>≈ marks local estimates; nothing here sent a token-count request.</Text>
+      </Box>
+    )
+  })
+
   on('ui.render', { component: 'Pane', requestId: AUTOPSY }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const records = (await loadMemory($)).compactions
@@ -434,6 +508,13 @@ export const register: Register = on => {
     const name = e.args.trim().split(/\s+/)[0] || 'trace'
     const view = VIEWS[name]
     if (!view) return { text: `Field Guide views: ${Object.keys(VIEWS).join(', ')}.` }
+    if (name === 'xray') {
+      try {
+        await readXray($)
+      } catch (err) {
+        fail($, 'xray', err)
+      }
+    }
     await $.ui.open({ id: view.id, title: view.title })
     await acknowledgeFlags($, name)
     return { text: `Field Guide: opened ${view.title}.` }
