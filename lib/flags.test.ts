@@ -207,3 +207,12 @@ describe('Loop Flags: failed edits', () => {
   })
 })
 
+describe('Loop Flags: Ended red without a baseline', () => {
+  test('says there is no baseline instead of claiming the failures are new', async () => {
+    const turns = session([use('e', 'Edit', { file_path: 'src/settings.ini' })], [run('p', OUTPUT.quiet)])
+    const red = judge(turns[1], turns)?.find(f => f.kind === 'ended-red')
+    expect(red?.reason).toMatch(/no baseline to compare with: the first test run came after an edit/)
+    expect(red?.reason).not.toMatch(/not failing at the start/)
+  })
+})
+

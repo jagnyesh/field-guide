@@ -122,7 +122,9 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
     title: 'Ended red',
     view: 'ledger',
     stepIds: [runs[runs.length - 1].id],
-    reason: `The last test run in this turn has ${plural(fresh.length, 'failing test that was', 'failing tests that were')} not failing at the start of the session.`,
+    reason: base
+      ? `The last test run in this turn has ${plural(fresh.length, 'failing test that was', 'failing tests that were')} not failing at the start of the session.`
+      : `The last test run in this turn has ${plural(fresh.length, 'failing test', 'failing tests')}, and no baseline to compare with: the first test run came after an edit, so they may or may not be new.`,
     testIds: fresh,
   }
 }

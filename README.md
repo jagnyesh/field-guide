@@ -25,13 +25,15 @@ scripts/make-fixture.sh /tmp/fg-review   # Python project, 2 tests already faili
 cd /tmp/fg-review && claude              # the installed plugin loads by itself
 ```
 
-1. Ask: *Change window_seconds in src/settings.ini from 60 to 30. Do not run the tests.* The band shows `⚑ Unverified edit · Turn 1 · /guide trace`, and a toast says why.
-2. Ask: *Run .venv/bin/python -m pytest -q.* The band shows `⚑ Ended red · Turn 2 · /guide ledger`. That's expected here: the first test run came after an edit, so there is no Baseline run and both failures count as new. Run the tests before any edit, and the same two show as already failing instead.
-3. Type `/guide trace`: the turn's steps, whether it was verified, its flag with **Tell Claude**, and the Reading List. Views you open stay as tabs in the pane.
-4. Type `/guide ledger`: each run's counts and failing tests, and the flag. Opening it acknowledges *Ended red*, so the band goes back to live facts: `Field Guide · pytest 3 passed, 2 failed · context N%`.
+1. Ask: *Run .venv/bin/python -m pytest -q.* This first run is the session's baseline: its 2 failures are marked already failing, and the band shows live facts, `Field Guide · pytest 3 passed, 2 failed · context N%`.
+2. Ask: *Change window_seconds in src/settings.ini from 60 to 30. Do not run the tests.* The band shows `⚑ Unverified edit · Turn 2 · /guide trace`, and a toast says why.
+3. Ask: *Run .venv/bin/python -m pytest -q.* The edit is now tested and the same 2 tests were already failing, so there's no flag: the band shows live facts again, `Field Guide · pytest 3 passed, 2 failed · context N%`.
+4. Type `/guide trace` for the turn's steps, whether it was verified, any flag with **Tell Claude**, and the Reading List; then `/guide ledger` for each run's counts with the already-failing tests marked. Views you open stay as tabs in the pane.
 5. Narrow the terminal to about 80 columns: the band truncates to fit, and panes open inline when you ask for them.
 
-If your settings deny the Read tool, as some lean-ctx setups do, Claude can't use Edit: add *use ctx_patch if the Edit tool is blocked* to step 1. Field Guide reads lean-ctx's `ctx_shell`, `ctx_read`, `ctx_patch`, and `ctx_search` like the built-in tools.
+Skip step 1 and edit first, and step 3 shows `⚑ Ended red` instead: with no baseline, Field Guide can't tell new failures from old ones, and says so.
+
+If your settings deny the Read tool, as some lean-ctx setups do, Claude can't use Edit: add *use ctx_patch if the Edit tool is blocked* to step 2. Field Guide reads lean-ctx's `ctx_shell`, `ctx_read`, `ctx_patch`, and `ctx_search` like the built-in tools.
 
 ## What it shows
 
