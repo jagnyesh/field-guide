@@ -1,5 +1,6 @@
 import { classify, commandVerification } from './classify'
 import type { StepKind, Verification } from './classify'
+import { addedMockTargets } from './mocks'
 import { guessWrites, shellReads } from './shelledit'
 import { parseTestRun } from './testrun'
 import type { TestRun } from './testrun'
@@ -40,6 +41,8 @@ export type Step = {
   readonly unreadableRun?: true
   // An edit that adds a skip, expected-failure, or run-only marker to a test.
   readonly addsMarker?: true
+  // The mock and patch targets an edit adds (module paths, read from its text in memory).
+  readonly mockTargets?: readonly string[]
   // Files a shell command changed: exact from the Live Probe's change list, or a best guess
   // from the command text. The diff views don't show these.
   readonly shellEdit?: { readonly paths: readonly string[]; readonly exact: boolean }
@@ -128,6 +131,11 @@ function texts(input: Readonly<Record<string, unknown>>, ...fields: string[]): s
     .join('\n')
 }
 
+function mockFacts(use: ToolUse): Pick<Step, 'mockTargets'> {
+  const added = addedMockTargets(use.input)
+  return added.length ? { mockTargets: added } : {}
+}
+
 // Read in memory only, never kept: does this edit leave more markers than it found?
 function addsMarker(use: ToolUse): boolean {
   const count = (text: string) => text.match(TEST_MARKER)?.length ?? 0
@@ -163,6 +171,7 @@ function toStep(use: ToolUse, ctx: Context, agentId?: string, expanding: Readonl
       ? { shellReads: shellReads(use.input.command) }
       : {}),
     ...(kind === 'edit' && addsMarker(use) ? { addsMarker: true as const } : {}),
+    ...(kind === 'edit' && use.tool !== 'Bash' ? mockFacts(use) : {}),
     summary: summarize(use),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,

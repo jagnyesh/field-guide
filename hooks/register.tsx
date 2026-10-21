@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import { alreadyFailing, judge } from '../lib/flags'
-import type { Finding } from '../lib/flags'
+import type { Finding, JudgeOptions } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
 import { turnGrowth } from '../lib/growth'
@@ -31,6 +31,8 @@ const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
 // Rebuilt from the transcript at every session start (which a resume and a hot reload both raise)
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
+// The project's choices, from the plugin's options (a change reloads the module).
+let judgeOptions: JudgeOptions = {}
 // Reads from before the last compaction, the compactions so far, and the latest summary's text
 // (held in memory only, read back from the transcript).
 let earlier: EarlierReads = { reads: [], reattached: [] }
@@ -96,7 +98,7 @@ async function rebuild($: EngineInterface): Promise<void> {
   summaryText = main.find(row => row.role === 'user' && SUMMARY_START.test(row.text.trimStart()))?.text ?? null
   const latest = timeline[timeline.length - 1]
   latestSettled = latest?.isSettled ?? true
-  findings = (latest && judge(latest, timeline)) || []
+  findings = (latest && judge(latest, timeline, judgeOptions)) || []
   await readUsage($)
   $.ui.invalidate('ui.render')
 }
@@ -376,7 +378,10 @@ function fail($: EngineInterface, where: string, err: unknown): void {
   $.ui.log(`field-guide: ${where} failed: ${err instanceof Error ? err.name : 'error'}`, { to: 'debug' })
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  const modules = typeof options.boundaryModules === 'string' ? options.boundaryModules.split(',').map(m => m.trim()).filter(Boolean) : []
+  judgeOptions = { boundaryMockAsFlag: options.boundaryMockAsFlag === true, ...(modules.length ? { boundaryModules: modules } : {}) }
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     try {

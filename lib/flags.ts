@@ -1,9 +1,16 @@
+import { DEFAULT_BOUNDARY_MODULES, boundaryTargets } from './mocks'
 import { covers, testIdFile } from './testrun'
 import type { TestRun } from './testrun'
 import { flatSteps, verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
 
-export type FindingKind = 'unverified-edit' | 'ended-red' | 'red-step' | 'test-changed-to-pass' | 'test-and-source-changed'
+export type FindingKind = 'unverified-edit' | 'ended-red' | 'red-step' | 'test-changed-to-pass' | 'test-and-source-changed' | 'boundary-mock'
+
+// A project's choices, from the plugin's options.
+export type JudgeOptions = {
+  readonly boundaryMockAsFlag?: boolean
+  readonly boundaryModules?: readonly string[]
+}
 
 // A flag is raised in the band; a note shows only inside its view (CONTEXT.md).
 export type Finding = {
@@ -192,7 +199,24 @@ function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
   return out
 }
 
-export function judge(turn: Turn, session: readonly Turn[] = [turn]): Finding[] | null {
+function boundaryMock(turn: Turn, options: JudgeOptions): Finding | null {
+  const modules = options.boundaryModules?.length ? options.boundaryModules : DEFAULT_BOUNDARY_MODULES
+  const steps = flatSteps(turn).filter(step => step.mockTargets?.length && (pathsOf(step) ?? []).some(isTestFile))
+  const hits = boundaryTargets(steps.flatMap(step => step.mockTargets ?? []), modules)
+  if (hits.length === 0) return null
+  return {
+    kind: 'boundary-mock',
+    level: options.boundaryMockAsFlag ? 'flag' : 'note',
+    title: 'Boundary mock',
+    view: 'ledger',
+    stepIds: steps.map(step => step.id),
+    reason: `A test now mocks ${hits.join(', ')}. A mock can pass while the real thing behaves differently: is there an unmocked test at this boundary?`,
+  }
+}
+
+export function judge(turn: Turn, session: readonly Turn[] = [turn], options: JudgeOptions = {}): Finding[] | null {
   if (!turn.isSettled) return null
-  return [unverifiedEdit(turn), endedRed(turn, session), ...changedTests(turn, session)].filter((f): f is Finding => f !== null)
+  return [unverifiedEdit(turn), endedRed(turn, session), ...changedTests(turn, session), boundaryMock(turn, options)].filter(
+    (f): f is Finding => f !== null,
+  )
 }

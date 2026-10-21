@@ -6,5 +6,19 @@
     "name": "Jagnyesh"
   },
   "license": "Apache-2.0",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "boundaryMockAsFlag": {
+      "type": "boolean",
+      "title": "Boundary mock as a flag",
+      "description": "Raise a flag in the band, not just a note in the Ledger, when a test mocks a database, HTTP client, or SDK.",
+      "default": false
+    },
+    "boundaryModules": {
+      "type": "string",
+      "title": "Boundary modules",
+      "description": "Comma-separated module names that count as boundaries; empty uses the built-in list.",
+      "default": ""
+    }
+  }
 }

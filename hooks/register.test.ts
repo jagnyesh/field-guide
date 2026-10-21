@@ -509,5 +509,36 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /^Last turn compacted: 30\.0k → 2\.0k tokens$/ })).toBeDefined()
     await ui.unmount()
   })
+
+  const MOCKED = [
+    { role: 'user', text: 'test the client', toolUses: [] },
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [
+        { tool_use_id: 'w', tool: 'Write', input: { file_path: 'tests/test_client.py', content: '@patch("requests.get")\ndef test_fetch(get): ...' }, text: 'ok' },
+        { tool_use_id: 'p', tool: 'Bash', input: { command: 'pytest -q' }, text: OUTPUT['all-pass'] },
+      ],
+    },
+  ]
+
+  test('by default a boundary mock is a note in the Ledger and never reaches the band', async ($, on) => {
+    standIn(on, MOCKED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Boundary mock/ })).toBeUndefined()
+    await band.unmount()
+    const ledger = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    expect(await ledger.find({ type: 'Text', text: /Boundary mock: A test now mocks requests/ })).toBeDefined()
+    await ledger.unmount()
+  })
+
+  test('a project that turns the option on gets a flag in the band', { options: { boundaryMockAsFlag: true } }, async ($, on) => {
+    standIn(on, MOCKED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /⚑ Boundary mock/ })).toBeDefined()
+    await band.unmount()
+  })
 })
 

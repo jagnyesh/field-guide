@@ -85,6 +85,10 @@ if scenario == "xray":
     check(x["total"] > 0 and len(names) >= 2, f"the fixed load has categories from the real breakdown ({names}, total {x['total']})")
     check(not any("message" in n.lower() for n in names), "the conversation is left out")
 
+if scenario == "boundary-mock":
+    levels = {finding["kind"]: finding["level"] for finding in last.get("findings", [])}
+    check(levels.get("boundary-mock") == "note", f"mocking urllib in a test is a Boundary mock note by default ({levels})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

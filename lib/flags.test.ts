@@ -175,3 +175,27 @@ describe('Loop Flags: shell edits count as edits', () => {
   })
 })
 
+describe('Loop Flags: Boundary mock', () => {
+  const mockEdit = (id: string, path: string, newString: string) => use(id, 'Edit', { file_path: path, old_string: '', new_string: newString })
+  const judged = (uses: ToolUse[], options?: { boundaryMockAsFlag?: boolean; boundaryModules?: readonly string[] }) => {
+    const turns = session([...uses, run('p', pytestOut([], 5))])
+    return (judge(turns[0], turns, options) ?? []).map(f => [f.kind, f.level, f.reason])
+  }
+
+  test('a test that now mocks a boundary module is a note explaining the risk', async () => {
+    const [found] = judged([mockEdit('e', 'tests/test_client.py', '@patch("requests.get")')])
+    expect(found.slice(0, 2)).toEqual(['boundary-mock', 'note'])
+    expect(found[2]).toMatch(/mocks requests\. A mock can pass while the real thing behaves differently/)
+  })
+
+  test('mocking project code, or a mock outside a test file, is not a boundary mock', async () => {
+    expect(judged([mockEdit('e', 'tests/test_lookup.py', 'patch("src.lookup.KNOWN", {})')])).toEqual([])
+    expect(judged([mockEdit('e', 'src/client.py', 'patch("requests.get")')])).toEqual([])
+  })
+
+  test('a project can make it a flag, and choose its own boundary modules', async () => {
+    expect(judged([mockEdit('e', 'tests/test_client.py', '@patch("requests.get")')], { boundaryMockAsFlag: true })[0].slice(0, 2)).toEqual(['boundary-mock', 'flag'])
+    expect(judged([mockEdit('e', 'tests/test_x.py', '@patch("internal_billing.charge")')], { boundaryModules: ['internal_billing'] })[0][0]).toBe('boundary-mock')
+  })
+})
+
