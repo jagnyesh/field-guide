@@ -1,0 +1,9 @@
+{
+  "name": "field-guide",
+  "version": "0.1.0",
+  "description": "Teaches new developers what the agent is doing: context, tool loop, tests, and compaction.",
+  "author": {
+    "name": "Jagnyesh"
+  },
+  "license": "Apache-2.0"
+}

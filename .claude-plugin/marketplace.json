@@ -1,0 +1,12 @@
+{
+  "name": "field-guide",
+  "owner": { "name": "Jagnyesh" },
+  "metadata": { "description": "Field Guide, a Claude Code mod for new developers." },
+  "plugins": [
+    {
+      "name": "field-guide",
+      "source": "./",
+      "description": "Teaches new developers what the agent is doing: context, tool loop, tests, and compaction."
+    }
+  ]
+}
