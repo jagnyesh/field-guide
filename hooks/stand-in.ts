@@ -17,6 +17,8 @@ export type StandInOptions = {
   // The /context breakdown the engine would estimate, and the instruction files it would find.
   breakdown?: unknown
   ancestors?: unknown[]
+  // The context's measured fill at each usage call.
+  contextTokens?: () => number
   // What `git status --porcelain -z -uall` prints after a shell call, and each file's mtime.
   status?: string
   mtimes?: Record<string, number>
@@ -61,7 +63,8 @@ export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) =>
   on('session.usage', (_: unknown, e: { breakdown?: string } | undefined) => {
     seen.usageArgs.push(e ?? {})
     const breakdown = e?.breakdown && options.breakdown ? { breakdown: options.breakdown } : {}
-    return { value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25, ...breakdown }, rateLimits: [] } }
+    const tokens = options.contextTokens?.() ?? 50_000
+    return { value: { startedAt: 0, context: { tokens, window: 200_000, percent: (tokens / 200_000) * 100, ...breakdown }, rateLimits: [] } }
   })
   on('fs.ancestors', () => ({ value: options.ancestors ?? [] }))
   on('prompt.section', (_: unknown, e: { text: string | null }) => ({ text: e.text }))

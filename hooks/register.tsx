@@ -5,6 +5,8 @@ import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
+import { turnGrowth } from '../lib/growth'
+import type { TurnGrowth } from '../lib/growth'
 import { fixedLoad } from '../lib/xray'
 import type { BreakdownInput, FixedLoad } from '../lib/xray'
 import { readingLists } from '../lib/readinglist'
@@ -38,6 +40,14 @@ const SUMMARY_START = /^This session is being continued from a previous conversa
 // System-prompt sections by name and text length, as the engine composed them; never their text.
 const sectionChars = new Map<string, number>()
 let xray: FixedLoad | null = null
+let xrayIsExact = false
+// Readings at each main-loop turn's end: the context's measured fill and the transcript's length.
+let mainRows: TranscriptMessage[] = []
+let contextTokens: number | null = null
+const readings: { tokens: number; rows: number; compactions: number }[] = []
+// Attachment text length since the last reading (the engine's own context for the model).
+let pendingAttachmentChars = 0
+let lastGrowth: { kind: 'growth'; growth: TurnGrowth } | { kind: 'compacted'; before?: number; after?: number } | null = null
 
 // Which flags were toasted, kept by the host so a hot reload doesn't toast them again.
 const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as string[])
@@ -67,6 +77,7 @@ async function readRows($: EngineInterface, agentId?: string): Promise<Transcrip
 
 async function rebuild($: EngineInterface): Promise<void> {
   const main = (await readRows($)) ?? []
+  mainRows = main
   // Subagents can start subagents, so follow Agent steps until no new id turns up.
   const subagents = new Map<string, TranscriptMessage[]>()
   const pending = startedAgents(main)
@@ -95,6 +106,7 @@ async function readUsage($: EngineInterface): Promise<void> {
     const usage = await $.session.usage()
     const percent = usage.context?.percent
     contextPercent = typeof percent === 'number' ? Math.round(percent) : null
+    contextTokens = typeof usage.context?.tokens === 'number' ? usage.context.tokens : null
   } catch {
     contextPercent = null
   }
@@ -203,9 +215,26 @@ function entryLine(entry: ReadingEntry): string {
   return `  read      ${entry.path}${by}${mark}`
 }
 
-// The free local estimate only: the exact breakdown sends token-count requests (#14 offers it on purpose).
-async function readXray($: EngineInterface): Promise<void> {
-  const usage = await $.session.usage({ breakdown: 'summary' })
+// After each main-loop turn: what it added, measured, split across the rows it added.
+async function recordGrowth($: EngineInterface): Promise<void> {
+  if (contextTokens === null) return
+  const now = { tokens: contextTokens, rows: mainRows.length, compactions: compactionCount }
+  const previous = readings[readings.length - 1]
+  if (previous && previous.compactions !== now.compactions) {
+    const record = (await loadMemory($)).compactions.slice(-1)[0]
+    lastGrowth = { kind: 'compacted', before: record?.tokensBefore, after: record?.tokensAfter }
+  } else if (previous) {
+    const rows = mainRows.slice(previous.rows)
+    lastGrowth = { kind: 'growth', growth: turnGrowth({ measured: now.tokens - previous.tokens, rows, attachmentChars: pendingAttachmentChars }) }
+  }
+  readings.push(now)
+  pendingAttachmentChars = 0
+}
+
+// The free local estimate unless the developer asks for exact counts, which send token-count requests.
+async function readXray($: EngineInterface, exact = false): Promise<void> {
+  const usage = await $.session.usage({ breakdown: exact ? 'full' : 'summary' })
+  xrayIsExact = exact
   const breakdown = usage.context.breakdown as BreakdownInput | undefined
   if (!breakdown) return
   const ancestors = await $.fs.ancestors({ names: ['CLAUDE.md', 'CLAUDE.local.md'] })
@@ -398,6 +427,7 @@ export const register: Register = on => {
 
   // On the first request after a compaction the engine attaches recently read files again (spike #2).
   on('prompt.attachment', async ($, e, next) => {
+    pendingAttachmentChars += e.text.length
     try {
       if (e.type === 'file' && (await loadMemory($)).window !== 'closed') {
         const path = REATTACHED_PATH.exec(e.text.split('\n')[0])?.[1]
@@ -425,7 +455,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: XRAY }, ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     if (!xray) {
       return (
         <Box flexDirection="column">
@@ -434,8 +464,22 @@ export const register: Register = on => {
       )
     }
     const row = (label: string, value: number, tail = '') => `  ${label.padEnd(28)} ≈ ${tokens(value)}${tail}`
+    const exact = () => readXray($, true).catch(err => fail($, 'xray exact', err))
+    const growth =
+      lastGrowth?.kind === 'compacted'
+        ? [<Text key="growth" bold>{`Last turn compacted: ${tokens(lastGrowth.before)} → ${tokens(lastGrowth.after)} tokens`}</Text>]
+        : lastGrowth?.kind === 'growth'
+          ? [
+              <Text key="growth" bold>{`Last turn added ${tokens(lastGrowth.growth.measured)} tokens (measured)`}</Text>,
+              ...lastGrowth.growth.parts.map((part, i) => <Text key={`growth:${i}`}>{row(part.label, part.approxTokens)}</Text>),
+              <Text key="growth:left" dimColor>
+                {row('Unattributed', lastGrowth.growth.unattributed, ' · reminders, formatting, thinking')}
+              </Text>,
+            ]
+          : []
     return (
       <Box flexDirection="column">
+        {growth}
         <Text bold>{`Fixed load ≈ ${tokens(xray.total)} tokens, paid on every request`}</Text>
         {xray.categories.map(c => (
           <Text key={`cat:${c.name}`}>{row(c.name, c.tokens)}</Text>
@@ -459,7 +503,12 @@ export const register: Register = on => {
             {row(sec.name, sec.approxTokens)}
           </Text>
         ))}
-        <Text dimColor>≈ marks local estimates; nothing here sent a token-count request.</Text>
+        <Text dimColor>
+          {xrayIsExact
+            ? 'Categories are exact counts from token-count requests; ≈ still marks per-message estimates.'
+            : '≈ marks local estimates; nothing here sent a token-count request.'}
+        </Text>
+        <Button key="exact" label="Exact breakdown (sends token-count requests)" onPress={exact} />
       </Box>
     )
   })
@@ -493,6 +542,7 @@ export const register: Register = on => {
     try {
       await rebuild($)
       if (!e.agentId) {
+        await recordGrowth($)
         await toastNewFlags($)
         await logDebug($)
         if ((await loadMemory($)).window === 'in-turn') await saveMemory($, m => ({ ...m, window: 'closed' }))

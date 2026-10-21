@@ -452,5 +452,62 @@ describe('Loop Trace pane', () => {
     expect(engine.usageArgs.some(args => (args as { breakdown?: string }).breakdown === 'summary')).toBe(true)
     await ui.unmount()
   })
+
+  const XRAY_PANE = { plugin: 'field-guide', surface: 'terminal' as const, component: 'Pane' as const, requestId: 'field-guide-xray', props: { title: 'Context X-ray', ...PANE_PROPS } }
+  const BREAKDOWN = { categories: [{ name: 'System prompt', tokens: 3_000, color: 'x', isDeferred: false, kind: 'used' }], memoryFiles: [], mcpTools: [] }
+
+  test('X-ray shows the last turn\'s measured growth split across its messages, with what is left over as Unattributed', async ($, on) => {
+    const first = [{ role: 'user', text: 'hello', toolUses: [] }, { role: 'assistant', text: 'hi', toolUses: [] }]
+    const second = [
+      ...first,
+      { role: 'user', text: 'read the big file', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'r', tool: 'Read', input: { file_path: 'src/big.py' }, text: 'x'.repeat(12_000) }] },
+    ]
+    let rows: unknown[] = first
+    let fill = 10_000
+    mock.env(on, {})
+    standIn(on, () => rows, { breakdown: BREAKDOWN, contextTokens: () => fill })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.turn.complete(DONE)
+    rows = second
+    fill = 15_000
+    await $.turn.complete(DONE)
+    await $.command.run({ ...RUN, args: 'xray' })
+    const ui = await $.ui.mount(XRAY_PANE)
+    expect(await ui.find({ type: 'Text', text: /^Last turn added 5\.0k tokens \(measured\)$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Read src\/big\.py\s+≈ 3\.0k/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Unattributed\s+≈ 2\.0k · reminders, formatting, thinking/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('the exact breakdown runs only when asked for, and says it sends token-count requests', async ($, on) => {
+    const engine = standIn(on, [], { breakdown: BREAKDOWN })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'xray' })
+    const ui = await $.ui.mount(XRAY_PANE)
+    expect(engine.usageArgs.some(a => (a as { breakdown?: string }).breakdown === 'full')).toBe(false)
+    await ui.press({ key: 'exact' })
+    expect(engine.usageArgs.some(a => (a as { breakdown?: string }).breakdown === 'full')).toBe(true)
+    // The stand-in answers ui.invalidate itself, so redraw by hand as the engine would.
+    await ui.redraw()
+    expect(await ui.find({ type: 'Text', text: /exact counts/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a turn that compacted shows tokens before and after instead of a breakdown', async ($, on) => {
+    mock.env(on, {})
+    standIn(on, [{ role: 'user', text: 'hello', toolUses: [] }], { breakdown: BREAKDOWN })
+    on('session.compact', () => ({ messages: [{ role: 'user', text: 'summary', toolUses: [], handle: 's1' }], tokensBefore: 30_000, tokensAfter: 2_000 }))
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.turn.complete(DONE)
+    await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hello', toolUses: [], handle: 'h1' }] })
+    await $.turn.complete(DONE)
+    await $.command.run({ ...RUN, args: 'xray' })
+    const ui = await $.ui.mount(XRAY_PANE)
+    expect(await ui.find({ type: 'Text', text: /^Last turn compacted: 30\.0k → 2\.0k tokens$/ })).toBeDefined()
+    await ui.unmount()
+  })
 })
 
