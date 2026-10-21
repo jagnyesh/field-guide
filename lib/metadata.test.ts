@@ -96,5 +96,16 @@ describe('Metadata-only rule: the debug line', () => {
     expect(JSON.parse(line).turns[0].steps[0].run.failingIds).toEqual(['tests/limit.test.js > …', 'tests/limit.test.js > …'])
     expect(line).not.toContain(MARKER)
   })
+
+  test('carries a shell edit as its paths and whether they are exact', async () => {
+    const turns = buildTimeline(
+      [{ role: 'user', text: 'go' }, { role: 'assistant', text: '', toolUses: [{ tool_use_id: 's', tool: 'Bash', input: { command: `sed -i '' 's/${MARKER}/x/' a.py` } }] }],
+      undefined,
+      () => ({ isReadOnly: false, shellEdits: ['a.py'] }),
+    )
+    const line = debugLine(turns)
+    expect(JSON.parse(line).turns[0].steps[0].shellEdit).toEqual({ exact: true, paths: ['a.py'] })
+    expect(line).not.toContain(MARKER)
+  })
 })
 

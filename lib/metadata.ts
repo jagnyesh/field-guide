@@ -21,6 +21,7 @@ type StepMetadata = {
   resultSize: number
   verification?: string
   run?: RunMetadata
+  shellEdit?: { exact: boolean; paths: string[] }
   children?: StepMetadata[]
 }
 
@@ -33,6 +34,7 @@ function stepMetadata(step: Step): StepMetadata {
   const out: StepMetadata = { tool: step.tool, kind: step.kind, isError: step.isError, resultSize: step.resultSize }
   if (step.verification) out.verification = step.verification
   if (step.run) out.run = runMetadata(step.run)
+  if (step.shellEdit) out.shellEdit = { exact: step.shellEdit.exact, paths: [...step.shellEdit.paths] }
   if (step.children) out.children = step.children.map(stepMetadata)
   return out
 }

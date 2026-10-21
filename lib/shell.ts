@@ -78,7 +78,25 @@ function tokenize(command: string): string[] {
   return tokens
 }
 
+// Heredoc bodies are data, not commands: drop each body up to its closing delimiter line.
+function stripHeredocs(command: string): string {
+  const lines = command.split('\n')
+  const kept: string[] = []
+  let closing: string | null = null
+  for (const line of lines) {
+    if (closing !== null) {
+      if (line.trim() === closing) closing = null
+      continue
+    }
+    kept.push(line)
+    const start = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/.exec(line)
+    if (start) closing = start[2]
+  }
+  return kept.join('\n')
+}
+
 export function segments(command: string): Segment[] {
+  command = stripHeredocs(command)
   const out: Segment[] = []
   let argv: string[] = []
   let targets: string[] = []

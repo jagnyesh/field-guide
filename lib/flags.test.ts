@@ -161,3 +161,17 @@ describe('Loop Flags: other runners', () => {
   })
 })
 
+describe('Loop Flags: shell edits count as edits', () => {
+  test('a shell edit with nothing after it raises Unverified edit', async () => {
+    expect(kinds(session([use('s', 'Bash', { command: "sed -i '' 's/60/30/' src/settings.ini" })]))).toEqual(['unverified-edit'])
+  })
+
+  test('a shell edit to the test file alone, between a failing and a passing run, raises Test changed to pass', async () => {
+    const turns = session([run('p1', OUTPUT.quiet)], [
+      use('s', 'Bash', { command: "sed -i '' 's/== 403/== 429/' tests/test_ratelimit.py" }),
+      run('p2', pytestOut(['tests/test_legacy.py::test_legacy_format'], 4)),
+    ])
+    expect(kinds(turns)).toEqual(['test-changed-to-pass'])
+  })
+})
+

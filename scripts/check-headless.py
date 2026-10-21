@@ -55,6 +55,12 @@ if scenario == "vitest":
     check(len(runs) == 1 and runs[0]["runner"] == "vitest", f"one vitest run was read ({[r['runner'] for r in runs]})")
     check(bool(runs) and (runs[0]["passed"], runs[0]["failed"]) == (2, 2), f"counts match the JS fixture ({runs[0] if runs else None})")
 
+if scenario == "shell-edit":
+    edits = [step for turn in last["turns"] for step in turn["steps"] if "shellEdit" in step]
+    check(len(edits) == 1 and edits[0]["kind"] == "edit", f"the sed call is an edit via shell ({[(s['kind'], s.get('shellEdit')) for s in edits]})")
+    check(bool(edits) and edits[0]["shellEdit"] == {"exact": True, "paths": ["src/settings.ini"]}, "it is exact, from the change list")
+    check("unverified-edit" in kinds, f"the unverified shell edit raises Unverified edit ({kinds})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

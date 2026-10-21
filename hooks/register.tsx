@@ -4,6 +4,8 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
+import { creditChanges, parseStatus } from '../lib/shelledit'
+import type { ProbeRecord } from '../types'
 import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 import type { TestRun } from '../lib/testrun'
@@ -23,6 +25,15 @@ let timeline: Turn[] = []
 const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as string[])
 // Flags the developer has seen: they opened its view or sent their next prompt.
 const acknowledged = atom({ plugin: 'field-guide', key: 'acknowledged' } as const, [] as string[])
+// The Live Probe's facts per shell call, which the transcript doesn't keep (ADR 0002).
+const probe = atom({ plugin: 'field-guide', key: 'probe' } as const, {} as Record<string, ProbeRecord>)
+const PROBE_KEEP = 500
+const SNAPSHOT_TIMEOUT_MS = 2_000
+const STAT_LIMIT = 200
+// The change list after the last shell call: the "before" of the next, for telling new deletions.
+let lastStatus = ''
+// The repository's top folder: git lists paths from there, the session may run from below it.
+let repoTop: string | null = null
 // The latest turn's findings, judged only once it settled; and the context window's fill.
 let findings: Finding[] = []
 let latestSettled = true
@@ -45,7 +56,8 @@ async function rebuild($: EngineInterface): Promise<void> {
     subagents.set(agentId, rows)
     pending.push(...startedAgents(rows))
   }
-  timeline = buildTimeline(main, agentId => subagents.get(agentId))
+  const facts = await read($, probe)
+  timeline = buildTimeline(main, agentId => subagents.get(agentId), id => facts[id])
   const latest = timeline[timeline.length - 1]
   latestSettled = latest?.isSettled ?? true
   findings = (latest && judge(latest, timeline)) || []
@@ -158,8 +170,65 @@ function verificationLine(turn: Turn): string | null {
   return flatSteps(turn).some(step => step.kind === 'edit') ? 'Not verified after the last edit' : null
 }
 
+function shellEditLabel(step: Step): string {
+  if (!step.shellEdit) return ''
+  const how = step.shellEdit.exact ? 'exact' : 'best guess'
+  return ` · via shell, ${how}: ${step.shellEdit.paths.join(', ')} · not in the diff views`
+}
+
 function stepLine(step: Step): string {
-  return `${step.isError ? '✗ ' : ''}${step.kind.padEnd(8)} ${step.tool}  ${step.summary}`.trimEnd()
+  return `${step.isError ? '✗ ' : ''}${step.kind.padEnd(8)} ${step.tool}  ${step.summary}`.trimEnd() + shellEditLabel(step)
+}
+
+async function remember($: EngineInterface, id: string, record: ProbeRecord): Promise<void> {
+  await update($, probe, all => {
+    const next = { ...all, [id]: record }
+    const ids = Object.keys(next)
+    for (const old of ids.slice(0, Math.max(0, ids.length - PROBE_KEEP))) delete next[old]
+    return next
+  })
+}
+
+// Runs after the call has returned its result, so the snapshot never delays it. The index lock
+// is left alone (--no-optional-locks), so the agent's own git commands never collide with it.
+async function snapshot($: EngineInterface, id: string, start: number, end: number): Promise<void> {
+  try {
+    if (repoTop === null) {
+      const top = await $.process.run(['git', 'rev-parse', '--show-toplevel'], { timeoutMs: SNAPSHOT_TIMEOUT_MS })
+      if (top.exitCode !== 0) {
+        await remember($, id, { isReadOnly: false })
+        return
+      }
+      repoTop = top.stdout.trim()
+    }
+    const status = await $.process.run(['git', '--no-optional-locks', 'status', '--porcelain', '-z', '-uall'], {
+      timeoutMs: SNAPSHOT_TIMEOUT_MS,
+    })
+    if (status.exitCode !== 0 || status.isStdoutTruncated) {
+      await remember($, id, { isReadOnly: false })
+      return
+    }
+    const entries = parseStatus(status.stdout).filter(entry => !entry.status.includes('D'))
+    if (entries.length > STAT_LIMIT) {
+      await remember($, id, { isReadOnly: false })
+      return
+    }
+    const mtimes = new Map<string, number>()
+    for (const entry of entries) {
+      try {
+        mtimes.set(entry.path, (await $.fs.stat(`${repoTop}/${entry.path}`)).mtimeMs)
+      } catch {
+        // Gone again already: nothing to credit.
+      }
+    }
+    const shellEdits = creditChanges({ after: status.stdout, previous: lastStatus, mtimeOf: path => mtimes.get(path), start, end })
+    lastStatus = status.stdout
+    await remember($, id, { isReadOnly: false, shellEdits })
+    await rebuild($)
+  } catch (err) {
+    await remember($, id, { isReadOnly: false })
+    fail($, 'snapshot', err)
+  }
 }
 
 async function logDebug($: EngineInterface): Promise<void> {
@@ -187,6 +256,24 @@ export const register: Register = on => {
       await rebuild($)
     } catch (err) {
       fail($, 'session.start', err)
+    }
+    return result
+  })
+
+  // The Live Probe: watch-only, the call and its result pass through untouched.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const start = await $.clock.now()
+    const result = await next(e)
+    try {
+      if (result.deny !== undefined) return result
+      if (result.isReadOnly) {
+        await remember($, e.tool_use_id, { isReadOnly: true })
+        return result
+      }
+      const end = await $.clock.now()
+      void $.clock.after(0, () => void snapshot($, e.tool_use_id, start, end))
+    } catch (err) {
+      fail($, 'tool.call', err)
     }
     return result
   })

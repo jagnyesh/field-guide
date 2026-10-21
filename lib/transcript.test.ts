@@ -146,4 +146,25 @@ describe('Transcript Reader', () => {
     const [turn] = buildTimeline(loop, () => loop)
     expect(turn.steps[0].children?.map(s => [s.id, s.children?.length ?? 0])).toEqual([['a', 0]])
   })
+
+  test('a shell call with exact changes from the Live Probe is an edit via shell, marked exact', async () => {
+    const [turn] = buildTimeline(
+      [prompt('go'), reply('', [use('s', 'Bash', { command: "sed -i '' 's/60/30/' src/settings.ini" })])],
+      undefined,
+      id => (id === 's' ? { isReadOnly: false, shellEdits: ['src/settings.ini'] } : undefined),
+    )
+    expect([turn.steps[0].kind, turn.steps[0].shellEdit]).toEqual(['edit', { paths: ['src/settings.ini'], exact: true }])
+  })
+
+  test('without probe facts (after a resume) a shell edit is read from the command text, marked best guess', async () => {
+    const [turn] = buildTimeline([prompt('go'), reply('', [use('s', 'Bash', { command: 'echo x > notes.txt' })])])
+    expect([turn.steps[0].kind, turn.steps[0].shellEdit]).toEqual(['edit', { paths: ['notes.txt'], exact: false }])
+  })
+
+  test("the probe's read-only flag decides whether a shell command read or ran", async () => {
+    const cat = (isReadOnly: boolean) =>
+      buildTimeline([prompt('go'), reply('', [use('c', 'Bash', { command: 'cat a.txt' })])], undefined, () => ({ isReadOnly }))[0].steps[0].kind
+    expect([cat(true), cat(false)]).toEqual(['read', 'run'])
+  })
 })
+

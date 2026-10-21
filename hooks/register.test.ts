@@ -322,4 +322,43 @@ describe('Loop Trace pane', () => {
     expect(engine.filled[0]).not.toContain('FG_MARKER_7f3a')
     await ui.unmount()
   })
+
+  test('after a shell call that is not read-only, the Live Probe credits the files it changed, without taking the index lock', async ($, on) => {
+    let callId = ''
+    const rows = () => [
+      { role: 'user', text: 'shorten the window', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: callId, tool: 'Bash', input: { command: 'python tools/rewrite.py' }, text: '' }] },
+    ]
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    const engine = standIn(on, rows, { status: ' M src/settings.ini\0 M src/other.py\0', mtimes: { 'src/settings.ini': 5_000, 'src/other.py': 10 } })
+    on('tool.call', (_, e) => {
+      callId = e.tool_use_id
+      return { result: { stdout: '', stderr: '', interrupted: false }, text: '' }
+    })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const result = await $.tool.call({ tool: 'Bash', command: 'python tools/rewrite.py', description: 'rewrite' })
+    expect(result.text).toBe('')
+    await clock.settle()
+    const git = engine.processes.find(p => p.argv[0] === 'git' && p.argv.includes('status'))
+    expect(git?.argv).toContain('--no-optional-locks')
+    expect(git?.timeoutMs).toBeGreaterThan(0)
+    await $.turn.complete(DONE)
+    await $.command.run({ ...RUN, args: 'trace' })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /edit\s+Bash\s+python tools\/rewrite\.py · via shell, exact: src\/settings\.ini · not in the diff views/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a read-only shell call takes no snapshot', async ($, on) => {
+    const clock = mock.clock(on, { now: 5_000 })
+    const engine = standIn(on, [], { status: '' })
+    on('tool.call', () => ({ result: { stdout: 'x', stderr: '', interrupted: false }, text: 'x', isReadOnly: true }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'cat a.txt', description: 'read' })
+    await clock.settle()
+    expect(engine.processes).toEqual([])
+  })
 })
+

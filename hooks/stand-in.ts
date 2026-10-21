@@ -1,11 +1,23 @@
 // What the engine answers beneath the plugin in a session, for the hooks tests.
-export type StandIn = { logs: string[]; opened: string[]; toasts: string[]; statuses: (string | undefined)[]; filled: string[] }
+export type StandIn = {
+  logs: string[]
+  opened: string[]
+  toasts: string[]
+  statuses: (string | undefined)[]
+  filled: string[]
+  processes: { argv: string[]; timeoutMs?: number }[]
+}
 
 // `rows` is the main transcript, or a function answering each `session.messages` call.
-export type StandInOptions = { band?: unknown }
+export type StandInOptions = {
+  band?: unknown
+  // What `git status --porcelain -z -uall` prints after a shell call, and each file's mtime.
+  status?: string
+  mtimes?: Record<string, number>
+}
 
 export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) => unknown[]) = [], options: StandInOptions = {}): StandIn {
-  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [] }
+  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [], processes: [] }
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.messages', (_: unknown, e: { agentId?: string }) => ({ value: typeof rows === 'function' ? rows(e ?? {}) : rows }))
   on('ui.open', (_: unknown, e: { id: string }) => {
@@ -25,6 +37,15 @@ export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) =>
     return { value: undefined }
   })
   on('ui.invalidate', () => ({ value: undefined }))
+  on('process.run', (_: unknown, e: { argv: string[]; init?: { timeoutMs?: number } }) => {
+    seen.processes.push({ argv: e.argv, timeoutMs: e.init?.timeoutMs })
+    const isRepo = options.status !== undefined
+    const stdout = e.argv.includes('--show-toplevel') ? '/work\n' : (options.status ?? '')
+    return { value: { exitCode: isRepo ? 0 : 128, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  // Paths arrive absolute; the test names them relative to the repository.
+  const mtimeOf = (path: string) => Object.entries(options.mtimes ?? {}).find(([name]) => path.endsWith('/' + name))?.[1] ?? 0
+  on('fs.stat', (_: unknown, e: { path: string }) => ({ value: { kind: 'file', size: 1, mtimeMs: mtimeOf(e.path), isLink: false } }))
   on('prompt.submit', (_: unknown, e: { text: string }) => ({ text: e.text }))
   on('prompt.fill', (_: unknown, e: { text: string }) => {
     seen.filled.push(e.text)

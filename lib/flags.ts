@@ -32,7 +32,7 @@ function baselines(session: readonly Turn[]): Map<string, TestRun> {
   const seen = new Set<string>()
   let sourceEdited = false
   for (const step of session.flatMap(flatSteps)) {
-    if (step.kind === 'edit' && !(step.path && isTestFile(step.path))) sourceEdited = true
+    if (step.kind === 'edit' && touchesSource(step)) sourceEdited = true
     if (!step.run || seen.has(step.run.runner)) continue
     seen.add(step.run.runner)
     if (!sourceEdited) found.set(step.run.runner, step.run)
@@ -46,6 +46,21 @@ export function alreadyFailing(session: readonly Turn[]): Map<string, Set<string
 }
 
 const testFile = testIdFile
+
+// The files an edit step changed; null when it doesn't say (treated as a source file).
+function pathsOf(step: Step): readonly string[] | null {
+  if (step.shellEdit) return step.shellEdit.paths
+  return step.path ? [step.path] : null
+}
+
+function touchesSource(step: Step): boolean {
+  const paths = pathsOf(step)
+  return paths === null || paths.some(path => !isTestFile(path))
+}
+
+function touchesFile(step: Step, file: string): boolean {
+  return (pathsOf(step) ?? []).some(path => samePath(path, file))
+}
 
 // Tools write absolute paths, runners print paths relative to their root: compare by suffix.
 function samePath(a: string, b: string): boolean {
@@ -82,10 +97,7 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
   const fresh = last.failingIds.filter(id => !already.has(id))
   if (fresh.length === 0) return null
   const edits = flatSteps(turn).filter(step => step.kind === 'edit')
-  const testEdits = edits.filter(step => step.path && isTestFile(step.path))
-  const isRedStep =
-    edits.length === testEdits.length &&
-    fresh.every(id => testEdits.some(step => step.path !== undefined && samePath(step.path, testFile(id))))
+  const isRedStep = !edits.some(touchesSource) && fresh.every(id => edits.some(step => touchesFile(step, testFile(id))))
   if (isRedStep) {
     return {
       kind: 'red-step',
@@ -148,9 +160,9 @@ function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
   const flagged: string[] = []
   const noted: string[] = []
   for (const { id, between } of passTransitions(turn, session)) {
-    const own = between.filter(step => step.path !== undefined && samePath(step.path, testFile(id)))
+    const own = between.filter(step => touchesFile(step, testFile(id)))
     if (own.length === 0) continue
-    const sourceChanged = between.some(step => !(step.path && isTestFile(step.path)))
+    const sourceChanged = between.some(touchesSource)
     if (own.some(step => step.addsMarker) || !sourceChanged) flagged.push(id)
     else noted.push(id)
   }
