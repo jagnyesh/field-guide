@@ -41,6 +41,12 @@ if scenario == "unverified":
 if scenario == "verified":
     check("unverified-edit" not in kinds, f"Unverified edit is not raised when tests ran after the edit ({kinds})")
 
+if scenario == "already-red":
+    check("ended-red" not in kinds, f"failures already there at the baseline do not raise Ended red ({kinds})")
+
+if scenario == "ended-red":
+    check("ended-red" in kinds, f"a test broken after the baseline raises Ended red ({kinds})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

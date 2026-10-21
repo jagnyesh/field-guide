@@ -26,11 +26,15 @@ export type Step = {
   readonly tool: string
   readonly kind: StepKind
   readonly summary: string
+  // The file a file tool read or changed.
+  readonly path?: string
   readonly isError: boolean
   readonly resultSize: number
   // On a verify step: what it verified, and for a test runner the run as read from its output.
   readonly verification?: Verification
   readonly run?: TestRun
+  // A test command whose output could not be read: it proves nothing, either way.
+  readonly unreadableRun?: true
   // Set on a subagent's own steps, and on an Agent step that started one.
   readonly agentId?: string
   // On an Agent step: the kind of subagent it started, and that subagent's steps.
@@ -74,22 +78,37 @@ function toolUses(messages: readonly TranscriptMessage[]): ToolUse[] {
 }
 
 // A test command whose output can't be read proves nothing the ledger can show, so it is a plain run.
-function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run'> | null {
+function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run' | 'unreadableRun'> | null {
   if (use.tool !== 'Bash' || typeof use.input.command !== 'string') return null
   const verification = commandVerification(use.input.command)
   if (verification !== 'tested') return verification ? { kind: 'verify', verification } : null
   const run = parseTestRun(use.input.command, use.text ?? '')
-  return run ? { kind: 'verify', verification, run } : { kind: 'run' }
+  return run ? { kind: 'verify', verification, run } : { kind: 'run', unreadableRun: true as const }
 }
 
 // `expanding` holds the subagents already being expanded above this step, so a cycle stops.
+const PATH_FIELD: Readonly<Record<string, string>> = {
+  Read: 'file_path',
+  Edit: 'file_path',
+  MultiEdit: 'file_path',
+  Write: 'file_path',
+  NotebookEdit: 'notebook_path',
+}
+
+function pathOf(use: ToolUse): string | undefined {
+  const value = PATH_FIELD[use.tool] ? use.input[PATH_FIELD[use.tool]] : undefined
+  return typeof value === 'string' ? value : undefined
+}
+
 function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string, expanding: ReadonlySet<string> = new Set()): Step {
   const kind = classify(use.tool, use.input)
+  const path = pathOf(use)
   const step: Step = {
     id: use.tool_use_id,
     tool: use.tool,
     kind,
     ...(kind === 'verify' ? verifyFacts(use) : {}),
+    ...(path ? { path } : {}),
     summary: summarize(use),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
@@ -112,14 +131,20 @@ function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string, expandi
 export type Turn = {
   readonly index: number
   readonly steps: Step[]
+  // The developer stopped this turn before it finished.
+  readonly isInterrupted?: true
   // False while a backgrounded subagent this turn started has not handed back.
   readonly isSettled: boolean
 }
+
+// The row the engine writes when the developer stops a turn.
+const INTERRUPTED = /^\[Request interrupted by user/
 
 // The engine writes these rows as user messages; none of them is the developer asking for work.
 const ENGINE_WRITTEN = [
   /^<(task-notification|local-command-stdout|local-command-stderr|system-reminder|bash-stdout|bash-stderr)\b/,
   /^This session is being continued from a previous conversation/,
+  INTERRUPTED,
 ]
 
 export function isDeveloperPrompt(message: TranscriptMessage): boolean {
@@ -158,11 +183,12 @@ export function startedAgents(messages: readonly TranscriptMessage[]): string[] 
 }
 
 export function buildTimeline(messages: readonly TranscriptMessage[], subagents: SubagentRows = () => undefined): Turn[] {
-  const turns: { index: number; steps: Step[] }[] = []
+  const turns: { index: number; steps: Step[]; isInterrupted?: true }[] = []
   const handedBack = new Set<string>()
   for (const message of messages) {
     if (message.role === 'user') {
       if (isDeveloperPrompt(message)) turns.push({ index: turns.length, steps: [] })
+      else if (INTERRUPTED.test(message.text.trimStart()) && turns.length > 0) turns[turns.length - 1].isInterrupted = true
       for (const match of message.text.matchAll(HANDED_BACK)) handedBack.add(match[1])
       continue
     }

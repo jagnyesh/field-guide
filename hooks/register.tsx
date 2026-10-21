@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import { judge } from '../lib/flags'
+import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
-import { debugLine } from '../lib/metadata'
+import { debugLine, stripParams } from '../lib/metadata'
 import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 import type { TestRun } from '../lib/testrun'
@@ -48,7 +48,7 @@ async function rebuild($: EngineInterface): Promise<void> {
   timeline = buildTimeline(main, agentId => subagents.get(agentId))
   const latest = timeline[timeline.length - 1]
   latestSettled = latest?.isSettled ?? true
-  findings = (latest && judge(latest)) || []
+  findings = (latest && judge(latest, timeline)) || []
   await readUsage($)
   $.ui.invalidate('ui.render')
 }
@@ -87,7 +87,21 @@ async function acknowledgeFlags($: EngineInterface, view?: string): Promise<void
 
 // What "Tell Claude" puts in the prompt box: the developer edits it and sends it as their own.
 function handOff(finding: Finding): string {
-  return `Field Guide flagged Turn ${timeline.length}: ${finding.title}. ${finding.reason} Please check this before going on.`
+  const ids = finding.testIds?.length ? ` Tests: ${finding.testIds.map(stripParams).join(', ')}.` : ''
+  return `Field Guide flagged Turn ${timeline.length}: ${finding.title}. ${finding.reason}${ids} Please check this before going on.`
+}
+
+// The latest turn's findings that a view explains, each with its reason and a Tell Claude button.
+function findingList($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], view: string): RenderChildren[] {
+  const { Box, Button, Text } = $.ui.resolve(e)
+  return findings
+    .filter(finding => finding.view === view)
+    .map(finding => (
+      <Box key={`finding:${finding.kind}`} flexDirection="column">
+        <Text color={finding.level === 'flag' ? 'yellow' : undefined}>{`⚑ ${finding.title}: ${finding.reason}`}</Text>
+        <Button key={`tell:${finding.kind}`} label="Tell Claude" onPress={() => $.prompt.fill({ text: handOff(finding) })} />
+      </Box>
+    ))
 }
 
 function lastRun(): TestRun | undefined {
@@ -245,24 +259,32 @@ export const register: Register = on => {
         </Box>
       )
     }
+    const already = alreadyFailing(timeline)
     return (
       <Box flexDirection="column">
+        {findingList($, e, 'ledger')}
         {runs.flatMap(({ turn, step, run }) => [
           <Text key={step.id} color={run.failed + run.errors > 0 ? 'red' : 'green'}>
             {`Turn ${turn.index + 1} · ${run.runner} · ${runCounts(run)}`}
           </Text>,
-          ...run.failingIds.map(id => (
-            <Text key={`${step.id}:${id}`} dimColor>
-              {`  ${id}`}
-            </Text>
-          )),
+          ...run.failingIds.map(id =>
+            already.get(run.runner)?.has(id) ? (
+              <Text key={`${step.id}:${id}`} dimColor>
+                {`  ${id}  (already failing)`}
+              </Text>
+            ) : (
+              <Text key={`${step.id}:${id}`} color="red">
+                {`  ${id}`}
+              </Text>
+            ),
+          ),
         ])}
       </Box>
     )
   })
 
   on('ui.render', { component: 'Pane', requestId: TRACE }, ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const turn = latestTurn()
     if (!turn || turn.steps.length === 0) {
       return (
@@ -275,13 +297,7 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Text bold>Turn {turn.index + 1}</Text>
         {verificationLine(turn) && <Text dimColor>{verificationLine(turn)}</Text>}
-        {turn.index === timeline.length - 1 &&
-          findings.map(finding => (
-            <Box key={`finding:${finding.kind}`} flexDirection="column">
-              <Text color={finding.level === 'flag' ? 'yellow' : undefined}>{`⚑ ${finding.title}: ${finding.reason}`}</Text>
-              <Button key={`tell:${finding.kind}`} label="Tell Claude" onPress={() => $.prompt.fill({ text: handOff(finding) })} />
-            </Box>
-          ))}
+        {turn.index === timeline.length - 1 && findingList($, e, 'trace')}
         {turn.steps.flatMap(step => [
           <Text key={step.id} color={step.isError ? 'red' : undefined}>
             {stepLine(step)}

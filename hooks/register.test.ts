@@ -281,4 +281,45 @@ describe('Loop Trace pane', () => {
     expect(engine.filled[0]).toMatch(/Unverified edit/)
     await ui.unmount()
   })
+
+  const RED = [
+    { role: 'user', text: 'run the tests', toolUses: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'p1', tool: 'Bash', input: { command: '.venv/bin/python -m pytest -q' }, text: OUTPUT.quiet }] },
+    { role: 'user', text: 'now tidy lookup', toolUses: [] },
+    {
+      role: 'assistant',
+      text: '',
+      toolUses: [
+        { tool_use_id: 'e1', tool: 'Edit', input: { file_path: 'src/lookup.py' }, text: 'ok' },
+        { tool_use_id: 'p2', tool: 'Bash', input: { command: '.venv/bin/python -m pytest -q' }, text: OUTPUT['param-fail'] },
+      ],
+    },
+  ]
+
+  test('the band raises Ended red for a failure that is new since the baseline', async ($, on) => {
+    standIn(on, RED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Ended red · Turn 2 · \/guide ledger/ })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('the Ledger marks tests that were already failing at the Baseline run', async ($, on) => {
+    standIn(on, RED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    expect(await ui.find({ type: 'Text', text: /test_legacy_format  \(already failing\)$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /test_lookup\[FG_MARKER_7f3a\]$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('Tell Claude for Ended red names the new tests without their parameters', async ($, on) => {
+    const engine = standIn(on, RED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    await ui.press({ key: 'tell:ended-red' })
+    expect(engine.filled[0]).toContain('tests/test_lookup.py::test_lookup[…]')
+    expect(engine.filled[0]).not.toContain('FG_MARKER_7f3a')
+    await ui.unmount()
+  })
 })
