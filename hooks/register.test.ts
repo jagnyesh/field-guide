@@ -225,4 +225,60 @@ describe('Loop Trace pane', () => {
       expect(reply.context).toBeUndefined()
     }
   })
+
+  test('a flag raised when a turn settles shows one toast, not one per rebuild', async ($, on) => {
+    const engine = standIn(on, EDITED)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.turn.complete(DONE)
+    await $.turn.complete(DONE)
+    expect(engine.toasts.filter(t => t.includes('Unverified edit')).length).toBe(1)
+  })
+
+  test('resuming a session whose last turn was flagged does not toast again', async ($, on) => {
+    const engine = standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    expect(engine.toasts).toEqual([])
+  })
+
+  test('opening the flag\'s view acknowledges it: the band goes back to live facts', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'trace' })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /context 25%/ })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('sending the next prompt acknowledges the flag', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.prompt.submit({ text: 'thanks, now the docs', origin: { kind: 'composer' }, turnId: 't2', wait: false })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    await band.unmount()
+  })
+
+  test('opening a different view does not acknowledge the flag', async ($, on) => {
+    standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'ledger' })
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeDefined()
+    await band.unmount()
+  })
+
+  test('Loop Trace explains each flag and "Tell Claude" fills an editable prompt rather than sending one', async ($, on) => {
+    const engine = standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ ...RUN, args: 'trace' })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /no test, lint, type check, or build ran after the last edit/ })).toBeDefined()
+    await ui.press({ key: 'tell:unverified-edit' })
+    expect(engine.filled.length).toBe(1)
+    expect(engine.filled[0]).toMatch(/Turn 1/)
+    expect(engine.filled[0]).toMatch(/Unverified edit/)
+    await ui.unmount()
+  })
 })

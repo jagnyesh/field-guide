@@ -1,11 +1,11 @@
 // What the engine answers beneath the plugin in a session, for the hooks tests.
-export type StandIn = { logs: string[]; opened: string[]; toasts: string[]; statuses: (string | undefined)[] }
+export type StandIn = { logs: string[]; opened: string[]; toasts: string[]; statuses: (string | undefined)[]; filled: string[] }
 
 // `rows` is the main transcript, or a function answering each `session.messages` call.
 export type StandInOptions = { band?: unknown }
 
 export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) => unknown[]) = [], options: StandInOptions = {}): StandIn {
-  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [] }
+  const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [] }
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.messages', (_: unknown, e: { agentId?: string }) => ({ value: typeof rows === 'function' ? rows(e ?? {}) : rows }))
   on('ui.open', (_: unknown, e: { id: string }) => {
@@ -25,6 +25,11 @@ export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) =>
     return { value: undefined }
   })
   on('ui.invalidate', () => ({ value: undefined }))
+  on('prompt.submit', (_: unknown, e: { text: string }) => ({ text: e.text }))
+  on('prompt.fill', (_: unknown, e: { text: string }) => {
+    seen.filled.push(e.text)
+    return { isFilled: true }
+  })
   on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 50_000, window: 200_000, percent: 25 }, rateLimits: [] } }))
   on('command.register', () => ({ value: undefined }))
   // Nothing of the engine's own is drawn in the band unless a test says so.

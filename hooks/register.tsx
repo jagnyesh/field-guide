@@ -1,3 +1,4 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import { judge } from '../lib/flags'
@@ -17,6 +18,11 @@ const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
 // Rebuilt from the transcript at every session start (which a resume and a hot reload both raise)
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
+
+// Which flags were toasted, kept by the host so a hot reload doesn't toast them again.
+const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as string[])
+// Flags the developer has seen: they opened its view or sent their next prompt.
+const acknowledged = atom({ plugin: 'field-guide', key: 'acknowledged' } as const, [] as string[])
 // The latest turn's findings, judged only once it settled; and the context window's fill.
 let findings: Finding[] = []
 let latestSettled = true
@@ -57,6 +63,33 @@ async function readUsage($: EngineInterface): Promise<void> {
   }
 }
 
+function flagKey(finding: Finding): string {
+  return `${timeline.length - 1}:${finding.kind}`
+}
+
+// One toast per flag per Settled turn, raised only as a turn ends: a resume or reload rebuilds
+// quietly, so an old flag never toasts twice.
+async function toastNewFlags($: EngineInterface): Promise<void> {
+  if (!latestSettled) return
+  const seen = await read($, toasted)
+  const fresh = findings.filter(f => f.level === 'flag' && !seen.includes(flagKey(f)))
+  if (fresh.length === 0) return
+  for (const flag of fresh) $.ui.toast(`Field Guide · ${flag.title}: ${flag.reason}`)
+  await update($, toasted, keys => [...keys, ...fresh.map(flagKey)].slice(-200))
+}
+
+// With a view, only the flags that view explains; without one (the next prompt), all of them.
+async function acknowledgeFlags($: EngineInterface, view?: string): Promise<void> {
+  const keys = findings.filter(f => f.level === 'flag' && (view === undefined || f.view === view)).map(flagKey)
+  if (keys.length === 0) return
+  await update($, acknowledged, seen => [...new Set([...seen, ...keys])].slice(-200))
+}
+
+// What "Tell Claude" puts in the prompt box: the developer edits it and sends it as their own.
+function handOff(finding: Finding): string {
+  return `Field Guide flagged Turn ${timeline.length}: ${finding.title}. ${finding.reason} Please check this before going on.`
+}
+
 function lastRun(): TestRun | undefined {
   for (let t = timeline.length - 1; t >= 0; t--) {
     const steps = flatSteps(timeline[t])
@@ -86,10 +119,10 @@ function fit(text: string, columns: number): string {
 }
 
 // The band's one line: a flag once the latest turn settled, otherwise live facts; null for nothing.
-function bandLine(isWorking: boolean): { text: string; isFlag: boolean } | null {
-  const flag = findings.find(f => f.level === 'flag')
+function bandLine(isWorking: boolean, seen: readonly string[]): { text: string; isFlag: boolean } | null {
+  const flag = findings.find(f => f.level === 'flag' && !seen.includes(flagKey(f)))
   if (flag && latestSettled && !isWorking) {
-    return { text: `⚑ ${flag.title} · Turn ${timeline.length} · /guide trace`, isFlag: true }
+    return { text: `⚑ ${flag.title} · Turn ${timeline.length} · /guide ${flag.view}`, isFlag: true }
   }
   const facts: string[] = []
   const run = lastRun()
@@ -149,7 +182,10 @@ export const register: Register = on => {
     const result = await next(e)
     try {
       await rebuild($)
-      if (!e.agentId) await logDebug($)
+      if (!e.agentId) {
+        await toastNewFlags($)
+        await logDebug($)
+      }
     } catch (err) {
       fail($, 'turn.complete', err)
     }
@@ -162,12 +198,25 @@ export const register: Register = on => {
     const view = VIEWS[name]
     if (!view) return { text: `Field Guide views: ${Object.keys(VIEWS).join(', ')}.` }
     await $.ui.open({ id: view.id, title: view.title })
+    await acknowledgeFlags($, name)
     return { text: `Field Guide: opened ${view.title}.` }
+  })
+
+  // The developer's next prompt means they've moved on; a subagent's hand-back is not theirs.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.origin.kind !== 'task-notification') {
+      try {
+        await acknowledgeFlags($)
+      } catch (err) {
+        fail($, 'prompt.submit', err)
+      }
+    }
+    return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    const line = bandLine(e.props.isWorking)
+    const line = bandLine(e.props.isWorking, await read($, acknowledged))
     // A teaching mod never crowds out a survey or another mod's band, safety mods above all;
     // a flag it can't show there goes to the status line instead.
     if (e.props.hasSurvey || isDrawnBeneath(below)) {
@@ -213,7 +262,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: TRACE }, ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const turn = latestTurn()
     if (!turn || turn.steps.length === 0) {
       return (
@@ -226,6 +275,13 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Text bold>Turn {turn.index + 1}</Text>
         {verificationLine(turn) && <Text dimColor>{verificationLine(turn)}</Text>}
+        {turn.index === timeline.length - 1 &&
+          findings.map(finding => (
+            <Box key={`finding:${finding.kind}`} flexDirection="column">
+              <Text color={finding.level === 'flag' ? 'yellow' : undefined}>{`⚑ ${finding.title}: ${finding.reason}`}</Text>
+              <Button key={`tell:${finding.kind}`} label="Tell Claude" onPress={() => $.prompt.fill({ text: handOff(finding) })} />
+            </Box>
+          ))}
         {turn.steps.flatMap(step => [
           <Text key={step.id} color={step.isError ? 'red' : undefined}>
             {stepLine(step)}

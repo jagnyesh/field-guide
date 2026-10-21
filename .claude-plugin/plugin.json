@@ -5,5 +5,6 @@
   "author": {
     "name": "Jagnyesh"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts"
 }

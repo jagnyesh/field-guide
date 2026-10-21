@@ -15,7 +15,7 @@ cat > "$tmp/tsconfig.json" <<JSON
     "moduleResolution": "Bundler", "lib": ["ES2023"], "types": [],
     "jsx": "react", "jsxFactory": "h", "jsxFragmentFactory": "Fragment"
   },
-  "include": ["$types", "$root/hooks/**/*", "$root/lib/**/*"]
+  "include": ["$types", "$root/types/**/*", "$root/hooks/**/*", "$root/lib/**/*"]
 }
 JSON
 npx --yes -p typescript@5.6.3 tsc -p "$tmp/tsconfig.json"

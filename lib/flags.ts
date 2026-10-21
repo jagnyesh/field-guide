@@ -8,6 +8,8 @@ export type Finding = {
   readonly kind: FindingKind
   readonly level: 'flag' | 'note'
   readonly title: string
+  // The view that explains it; opening that view acknowledges the flag.
+  readonly view: 'trace' | 'ledger'
   // The steps that set it off.
   readonly stepIds: readonly string[]
   // One sentence on why it fired, stating the principle.
@@ -21,6 +23,7 @@ function unverifiedEdit(turn: Turn): Finding | null {
     kind: 'unverified-edit',
     level: 'flag',
     title: 'Unverified edit',
+    view: 'trace',
     stepIds: [edits[edits.length - 1].id],
     reason: 'Files changed and no test, lint, type check, or build ran after the last edit, so nothing has shown the change works.',
   }
