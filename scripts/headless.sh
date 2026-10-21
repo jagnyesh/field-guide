@@ -22,7 +22,8 @@ mkdir -p "$out"
 cleanup() { python3 -I "$here/forget-session.py" "$fixture" || true; }
 trap cleanup EXIT
 
-# Each line of the prompt file is one turn; a line starting with "resume:" resumes the session first.
+# Each line of the prompt file is one turn, each after the first resuming the same session. claude
+# reads stdin, so it gets /dev/null: otherwise the first call swallows the rest of the prompt file.
 session=""
 turn=0
 while IFS= read -r line || [ -n "$line" ]; do
@@ -35,7 +36,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       --plugin-dir "$plugin" \
       --allowedTools Read Grep Glob Edit Write "Bash(cat:*)" "Bash(.venv/bin/python -m pytest:*)" "Bash(sed:*)" Agent Task \
       --debug-file "$out/debug-$turn.log" \
-      --output-format json ${resume[@]+"${resume[@]}"} "$line" > "$out/result-$turn.json")
+      --output-format json ${resume[@]+"${resume[@]}"} "$line" < /dev/null > "$out/result-$turn.json")
   session="$(python3 -I "$here/json-field.py" "$out/result-$turn.json" session_id)"
 done < "$prompt_file"
 

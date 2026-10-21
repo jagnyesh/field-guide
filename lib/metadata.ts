@@ -9,7 +9,7 @@ export function stripParams(id: string): string {
   return id.replace(/\[[^\]]*\]/g, '[…]')
 }
 
-type RunMetadata = Omit<TestRun, 'failingIds'> & { failingIds: string[] }
+type RunMetadata = Omit<TestRun, 'failingIds' | 'scope'> & { failingIds: string[] }
 
 type StepMetadata = {
   tool: string

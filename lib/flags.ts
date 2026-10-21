@@ -1,8 +1,9 @@
+import { covers } from './testrun'
 import type { TestRun } from './testrun'
 import { flatSteps, verificationOf } from './transcript'
-import type { Turn } from './transcript'
+import type { Step, Turn } from './transcript'
 
-export type FindingKind = 'unverified-edit' | 'ended-red'
+export type FindingKind = 'unverified-edit' | 'ended-red' | 'red-step' | 'test-changed-to-pass' | 'test-and-source-changed'
 
 // A flag is raised in the band; a note shows only inside its view (CONTEXT.md).
 export type Finding = {
@@ -44,6 +45,18 @@ export function alreadyFailing(session: readonly Turn[]): Map<string, Set<string
   return new Map([...baselines(session)].map(([runner, run]) => [runner, new Set(run.failingIds)]))
 }
 
+// The file part of a test id ("tests/test_a.py::test_b" is in "tests/test_a.py").
+function testFile(id: string): string {
+  return id.split('::')[0]
+}
+
+// Tools write absolute paths, runners print paths relative to their root: compare by suffix.
+function samePath(a: string, b: string): boolean {
+  const trim = (p: string) => p.replace(/^\.\//, '')
+  const [x, y] = [trim(a), trim(b)]
+  return x === y || x.endsWith('/' + y) || y.endsWith('/' + x)
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
 }
@@ -71,6 +84,22 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
   const already = new Set(base?.failingIds ?? [])
   const fresh = last.failingIds.filter(id => !already.has(id))
   if (fresh.length === 0) return null
+  const edits = flatSteps(turn).filter(step => step.kind === 'edit')
+  const testEdits = edits.filter(step => step.path && isTestFile(step.path))
+  const isRedStep =
+    edits.length === testEdits.length &&
+    fresh.every(id => testEdits.some(step => step.path !== undefined && samePath(step.path, testFile(id))))
+  if (isRedStep) {
+    return {
+      kind: 'red-step',
+      level: 'note',
+      title: 'Red step',
+      view: 'ledger',
+      stepIds: [runs[runs.length - 1].id],
+      reason: 'The new failures are all in tests this turn wrote, and no source file changed: the first step of test-driven development, before the code exists.',
+      testIds: fresh,
+    }
+  }
   return {
     kind: 'ended-red',
     level: 'flag',
@@ -96,7 +125,65 @@ function unverifiedEdit(turn: Turn): Finding | null {
 }
 
 // Findings for a Settled turn, or null while it hasn't settled: a flag judged halfway through is often wrong.
+// For each test that failed and then passed in a run this turn: the edits between the two runs.
+function passTransitions(turn: Turn, session: readonly Turn[]): { id: string; between: Step[] }[] {
+  const steps = session.flatMap(flatSteps)
+  const inTurn = new Set(flatSteps(turn).map(step => step.id))
+  const found = new Map<string, Step[]>()
+  steps.forEach((later, j) => {
+    const run = later.run
+    if (!run || !inTurn.has(later.id)) return
+    const failingNow = new Set(run.failingIds)
+    for (let i = j - 1; i >= 0; i--) {
+      const earlier = steps[i].run
+      if (!earlier || earlier.runner !== run.runner) continue
+      for (const id of earlier.failingIds) {
+        if (found.has(id) || failingNow.has(id) || !covers(run, id) || !covers(earlier, id)) continue
+        found.set(id, steps.slice(i + 1, j).filter(step => step.kind === 'edit'))
+      }
+      break
+    }
+  })
+  return [...found].map(([id, between]) => ({ id, between }))
+}
+
+function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
+  const flagged: string[] = []
+  const noted: string[] = []
+  for (const { id, between } of passTransitions(turn, session)) {
+    const own = between.filter(step => step.path !== undefined && samePath(step.path, testFile(id)))
+    if (own.length === 0) continue
+    const sourceChanged = between.some(step => !(step.path && isTestFile(step.path)))
+    if (own.some(step => step.addsMarker) || !sourceChanged) flagged.push(id)
+    else noted.push(id)
+  }
+  const out: Finding[] = []
+  if (flagged.length) {
+    out.push({
+      kind: 'test-changed-to-pass',
+      level: 'flag',
+      title: 'Test changed to pass',
+      view: 'ledger',
+      stepIds: [],
+      reason: `${plural(flagged.length, 'test', 'tests')} failed and then passed with only the test itself edited in between: check whether the test or the code was wrong.`,
+      testIds: flagged,
+    })
+  }
+  if (noted.length) {
+    out.push({
+      kind: 'test-and-source-changed',
+      level: 'note',
+      title: 'Test and source both changed',
+      view: 'ledger',
+      stepIds: [],
+      reason: `${plural(noted.length, 'test', 'tests')} passed after both the test and the source changed: usual for a bug fix, worth a look at what the test now asserts.`,
+      testIds: noted,
+    })
+  }
+  return out
+}
+
 export function judge(turn: Turn, session: readonly Turn[] = [turn]): Finding[] | null {
   if (!turn.isSettled) return null
-  return [unverifiedEdit(turn), endedRed(turn, session)].filter((f): f is Finding => f !== null)
+  return [unverifiedEdit(turn), endedRed(turn, session), ...changedTests(turn, session)].filter((f): f is Finding => f !== null)
 }

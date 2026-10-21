@@ -47,6 +47,10 @@ if scenario == "already-red":
 if scenario == "ended-red":
     check("ended-red" in kinds, f"a test broken after the baseline raises Ended red ({kinds})")
 
+if scenario == "changed-to-pass":
+    check("test-changed-to-pass" in kinds, f"a failing test made to pass by editing only the test raises the flag ({kinds})")
+    check("ended-red" not in kinds, f"no Ended red, since only already-failing tests remain ({kinds})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

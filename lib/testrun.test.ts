@@ -9,6 +9,7 @@ describe('Test Output Parser: pytest', () => {
     for (const output of [OUTPUT.quiet, OUTPUT['framed-fail']]) {
       expect(parseTestRun(PYTEST, output)).toEqual({
         runner: 'pytest',
+        scope: 'all',
         passed: 3,
         failed: 2,
         errors: 0,
@@ -40,5 +41,15 @@ describe('Test Output Parser: pytest', () => {
     expect(parseTestRun('cargo test', OUTPUT.quiet)).toBeNull()
     expect(parseTestRun(PYTEST, 'Traceback (most recent call last):\n  ImportError: no module named x')).toBeNull()
     expect(parseTestRun('ruff check .', 'All checks passed!')).toBeNull()
+  })
+
+  test('knows which tests a run could have reported on', async () => {
+    const scope = (command: string) => parseTestRun(command, OUTPUT['all-pass'])?.scope
+    expect(scope('pytest -q')).toBe('all')
+    expect(scope('pytest -q tests/test_lookup.py ./tests/unit/')).toEqual(['tests/test_lookup.py', 'tests/unit/'])
+    expect(scope('pytest -q tests/test_x.py::test_y')).toEqual(['tests/test_x.py'])
+    expect(scope('pytest -k lookup')).toBe('unknown')
+    expect(scope('pytest --lf')).toBe('unknown')
+    expect(scope('pytest --tb short -q')).toBe('all')
   })
 })

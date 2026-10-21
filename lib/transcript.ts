@@ -35,6 +35,8 @@ export type Step = {
   readonly run?: TestRun
   // A test command whose output could not be read: it proves nothing, either way.
   readonly unreadableRun?: true
+  // An edit that adds a skip, expected-failure, or run-only marker to a test.
+  readonly addsMarker?: true
   // Set on a subagent's own steps, and on an Agent step that started one.
   readonly agentId?: string
   // On an Agent step: the kind of subagent it started, and that subagent's steps.
@@ -100,6 +102,22 @@ function pathOf(use: ToolUse): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+const TEST_MARKER = /@pytest\.mark\.(skip|skipif|xfail)\b|\bpytest\.(skip|xfail)\(|\b(it|test|describe)\.(skip|only|todo)\(|\bx(it|describe|test)\(|@unittest\.skip|\bt\.Skip\(/g
+
+function texts(input: Readonly<Record<string, unknown>>, ...fields: string[]): string {
+  const edits = Array.isArray(input.edits) ? (input.edits as Record<string, unknown>[]) : []
+  return [input, ...edits]
+    .flatMap(part => fields.map(field => part[field]))
+    .filter((v): v is string => typeof v === 'string')
+    .join('\n')
+}
+
+// Read in memory only, never kept: does this edit leave more markers than it found?
+function addsMarker(use: ToolUse): boolean {
+  const count = (text: string) => text.match(TEST_MARKER)?.length ?? 0
+  return count(texts(use.input, 'new_string', 'content', 'new_source')) > count(texts(use.input, 'old_string'))
+}
+
 function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string, expanding: ReadonlySet<string> = new Set()): Step {
   const kind = classify(use.tool, use.input)
   const path = pathOf(use)
@@ -109,6 +127,7 @@ function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string, expandi
     kind,
     ...(kind === 'verify' ? verifyFacts(use) : {}),
     ...(path ? { path } : {}),
+    ...(kind === 'edit' && addsMarker(use) ? { addsMarker: true as const } : {}),
     summary: summarize(use),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
