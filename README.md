@@ -13,7 +13,14 @@ claude plugin marketplace add jagnyesh/field-guide
 claude plugin install field-guide@field-guide --scope user
 ```
 
-Or try it for one session from a clone: `claude --plugin-dir ./field-guide`.
+Or try it for one session without installing, by pointing `--plugin-dir` at a clone (the repo root is the plugin):
+
+```bash
+git clone https://github.com/jagnyesh/field-guide ~/field-guide
+claude --plugin-dir ~/field-guide
+```
+
+If you've also installed it, run `claude plugin disable field-guide@field-guide --scope user` first so only one copy loads, and `claude plugin enable field-guide@field-guide --scope user` afterwards.
 
 ## Try it
 
