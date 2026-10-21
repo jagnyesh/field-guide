@@ -1,4 +1,5 @@
 import type { Finding } from './flags'
+import type { ReadingList } from './readinglist'
 import type { TestRun } from './testrun'
 import { verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
@@ -41,9 +42,19 @@ function stepMetadata(step: Step): StepMetadata {
 
 // Everything that leaves the transcript goes through here (see ADR 0003): only
 // fields named above are copied, so a new field on Step stays out until added on purpose.
-export function debugLine(turns: readonly Turn[], findings: readonly Finding[] = []): string {
+// Search queries can name people or values, so a Reading List leaves the pane as a count of them.
+function listMetadata(list: ReadingList) {
+  return {
+    file: list.file,
+    reads: list.entries.flatMap(entry => (entry.kind === 'read' ? [entry.agent ? { path: entry.path, agent: entry.agent } : { path: entry.path }] : [])),
+    searches: list.entries.filter(entry => entry.kind === 'search').length,
+  }
+}
+
+export function debugLine(turns: readonly Turn[], findings: readonly Finding[] = [], lists: readonly ReadingList[] = []): string {
   return JSON.stringify({
     turns: turns.map(turn => ({ index: turn.index, verification: verificationOf(turn), steps: turn.steps.map(stepMetadata) })),
     findings: findings.map(({ kind, level }) => ({ kind, level })),
+    readingLists: lists.map(listMetadata),
   })
 }

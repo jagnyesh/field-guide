@@ -4,6 +4,8 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
+import { readingLists } from '../lib/readinglist'
+import type { ReadingEntry } from '../lib/readinglist'
 import { creditChanges, parseStatus } from '../lib/shelledit'
 import type { ProbeRecord } from '../types'
 import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
@@ -170,6 +172,11 @@ function verificationLine(turn: Turn): string | null {
   return flatSteps(turn).some(step => step.kind === 'edit') ? 'Not verified after the last edit' : null
 }
 
+function entryLine(entry: ReadingEntry): string {
+  const by = entry.agent ? ` (by ${entry.agent})` : ''
+  return entry.kind === 'read' ? `  read      ${entry.path}${by}` : `  searched  ${entry.query}${by}`
+}
+
 function shellEditLabel(step: Step): string {
   if (!step.shellEdit) return ''
   const how = step.shellEdit.exact ? 'exact' : 'best guess'
@@ -233,7 +240,9 @@ async function snapshot($: EngineInterface, id: string, start: number, end: numb
 
 async function logDebug($: EngineInterface): Promise<void> {
   if ((await $.env.get('FIELD_GUIDE_DEBUG')) !== '1') return
-  $.ui.log(`field-guide: ${debugLine(timeline, findings)}`, { to: 'debug' })
+  const latest = timeline[timeline.length - 1]
+  const lists = latest ? readingLists(latest, timeline) : []
+  $.ui.log(`field-guide: ${debugLine(timeline, findings, lists)}`, { to: 'debug' })
 }
 
 function latestTurn(): Turn | undefined {
@@ -385,6 +394,20 @@ export const register: Register = on => {
         <Text bold>Turn {turn.index + 1}</Text>
         {verificationLine(turn) && <Text dimColor>{verificationLine(turn)}</Text>}
         {turn.index === timeline.length - 1 && findingList($, e, 'trace')}
+        {readingLists(turn, timeline).flatMap(list => [
+          <Text key={`list:${list.file}`} bold>{`Reading List · ${list.file}`}</Text>,
+          ...(list.entries.length
+            ? list.entries.map((entry, i) => (
+                <Text key={`list:${list.file}:${i}`} dimColor>
+                  {entryLine(entry)}
+                </Text>
+              ))
+            : [
+                <Text key={`list:${list.file}:none`} dimColor>
+                  {'  nothing read before this edit'}
+                </Text>,
+              ]),
+        ])}
         {turn.steps.flatMap(step => [
           <Text key={step.id} color={step.isError ? 'red' : undefined}>
             {stepLine(step)}

@@ -28,6 +28,20 @@ function perlFiles(args: readonly string[]): string[] {
   return at === -1 ? [] : positionals(args.slice(at + 2))
 }
 
+const PRINTERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'nl', 'wc'])
+
+// Files a read-only shell command prints: the arguments of cat, head, tail, and `sed -n`.
+export function shellReads(command: string): string[] {
+  const found: string[] = []
+  for (const segment of segments(command)) {
+    const [program, ...args] = segment.argv
+    const name = basename(program ?? '')
+    if (PRINTERS.has(name)) found.push(...positionals(args).filter(arg => !/^\d+$/.test(arg)))
+    else if (name === 'sed' && args.includes('-n')) found.push(...positionals(args).slice(1))
+  }
+  return [...new Set(found)]
+}
+
 // Files a shell command writes, moves, creates, or deletes, as far as its text shows.
 // A script that writes files (`python - <<EOF`) shows nothing here.
 export function guessWrites(command: string): string[] {

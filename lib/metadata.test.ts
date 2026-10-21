@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { judge } from './flags'
 import { debugLine, stripParams } from './metadata'
+import { readingLists } from './readinglist'
 import { buildTimeline } from './transcript'
 import { OUTPUT } from './fixtures/pytest'
 import { OUTPUT as VITEST } from './fixtures/vitest'
@@ -105,6 +106,24 @@ describe('Metadata-only rule: the debug line', () => {
     )
     const line = debugLine(turns)
     expect(JSON.parse(line).turns[0].steps[0].shellEdit).toEqual({ exact: true, paths: ['a.py'] })
+    expect(line).not.toContain(MARKER)
+  })
+
+  test('carries Reading Lists with the files read, but only a count of searches: queries stay out', async () => {
+    const turns = buildTimeline([
+      { role: 'user', text: 'go' },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'g', tool: 'Grep', input: { pattern: MARKER } },
+          { tool_use_id: 'r', tool: 'Read', input: { file_path: 'src/a.py' } },
+          { tool_use_id: 'e', tool: 'Edit', input: { file_path: 'src/a.py' } },
+        ],
+      },
+    ])
+    const line = debugLine(turns, [], readingLists(turns[0], turns))
+    expect(JSON.parse(line).readingLists).toEqual([{ file: 'src/a.py', reads: [{ path: 'src/a.py' }], searches: 1 }])
     expect(line).not.toContain(MARKER)
   })
 })

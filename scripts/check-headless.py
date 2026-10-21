@@ -61,6 +61,14 @@ if scenario == "shell-edit":
     check(bool(edits) and edits[0]["shellEdit"] == {"exact": True, "paths": ["src/settings.ini"]}, "it is exact, from the change list")
     check("unverified-edit" in kinds, f"the unverified shell edit raises Unverified edit ({kinds})")
 
+if scenario == "reading-list":
+    lists = {entry["file"]: entry["reads"] for entry in last.get("readingLists", [])}
+    reads = next((reads for file, reads in lists.items() if file.endswith("src/settings.ini")), None)
+    check(reads is not None, f"settings.ini has a Reading List ({list(lists)})")
+    paths = [(r["path"].split("/fixture/")[-1], r.get("agent")) for r in reads or []]
+    check(("src/ratelimit.py", "Explore") in paths, f"the subagent's read is listed under it ({paths})")
+    check(("src/settings.ini", None) in paths, f"the main loop's read is listed ({paths})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

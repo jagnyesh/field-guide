@@ -360,5 +360,28 @@ describe('Loop Trace pane', () => {
     await clock.settle()
     expect(engine.processes).toEqual([])
   })
+
+  test('Loop Trace shows the Reading List for each file the turn edited', async ($, on) => {
+    const main = [
+      { role: 'user', text: 'fix lookup', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'a', tool: 'Agent', input: { description: 'Find lookup', subagent_type: 'Explore' }, text: 'ok', agentId: 'x1' },
+          { tool_use_id: 'g', tool: 'Grep', input: { pattern: 'def lookup' }, text: '' },
+          { tool_use_id: 'e', tool: 'Edit', input: { file_path: 'src/lookup.py' }, text: 'ok' },
+        ],
+      },
+    ]
+    const sub = [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 's', tool: 'Read', input: { file_path: 'src/__init__.py' }, text: '' }] }]
+    standIn(on, e => (e.agentId ? sub : main))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /^Reading List · src\/lookup\.py$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /read\s+src\/__init__\.py \(by Explore\)/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /searched\s+def lookup/ })).toBeDefined()
+    await ui.unmount()
+  })
 })
 

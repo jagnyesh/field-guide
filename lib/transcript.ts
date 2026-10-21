@@ -1,6 +1,6 @@
 import { classify, commandVerification } from './classify'
 import type { StepKind, Verification } from './classify'
-import { guessWrites } from './shelledit'
+import { guessWrites, shellReads } from './shelledit'
 import { parseTestRun } from './testrun'
 import type { TestRun } from './testrun'
 
@@ -29,6 +29,8 @@ export type Step = {
   readonly summary: string
   // The file a file tool read or changed.
   readonly path?: string
+  // The files a read-only shell command printed.
+  readonly shellReads?: readonly string[]
   readonly isError: boolean
   readonly resultSize: number
   // On a verify step: what it verified, and for a test runner the run as read from its output.
@@ -157,6 +159,9 @@ function toStep(use: ToolUse, ctx: Context, agentId?: string, expanding: Readonl
     kind,
     ...(shellEdit ? { shellEdit } : {}),
     ...(path ? { path } : {}),
+    ...(kind === 'read' && use.tool === 'Bash' && typeof use.input.command === 'string'
+      ? { shellReads: shellReads(use.input.command) }
+      : {}),
     ...(kind === 'edit' && addsMarker(use) ? { addsMarker: true as const } : {}),
     summary: summarize(use),
     isError: use.isError === true,
