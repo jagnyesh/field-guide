@@ -210,9 +210,10 @@ function runCounts(run: TestRun): string {
 
 function verificationLine(turn: Turn): string | null {
   const verified = verificationOf(turn)
-  if (verified === 'tested') return 'Tested after the last edit'
-  if (verified === 'checked') return 'Checked after the last edit (lint, type check, or build; no test run)'
-  return flatSteps(turn).some(changedFiles) ? 'Not verified after the last edit' : null
+  const edited = flatSteps(turn).some(changedFiles)
+  if (verified === 'tested') return edited ? 'Tested after the last edit' : 'Tests ran this turn'
+  if (verified === 'checked') return edited ? 'Checked after the last edit (lint, type check, or build; no test run)' : 'Checks ran this turn (lint, type check, or build)'
+  return edited ? 'Not verified after the last edit' : null
 }
 
 function entryLine(entry: ReadingEntry): string {

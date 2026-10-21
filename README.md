@@ -15,6 +15,24 @@ claude plugin install field-guide@field-guide --scope user
 
 Or try it for one session from a clone: `claude --plugin-dir ./field-guide`.
 
+## Try it
+
+A toy project to watch it on (needs `git` and `uv`):
+
+```bash
+git clone https://github.com/jagnyesh/field-guide && cd field-guide
+scripts/make-fixture.sh /tmp/fg-review   # Python project, 2 tests already failing, pytest in .venv
+cd /tmp/fg-review && claude              # the installed plugin loads by itself
+```
+
+1. Ask: *Change window_seconds in src/settings.ini from 60 to 30. Do not run the tests.* The band shows `⚑ Unverified edit · Turn 1 · /guide trace`, and a toast says why.
+2. Ask: *Run .venv/bin/python -m pytest -q.* The band shows `⚑ Ended red · Turn 2 · /guide ledger`. That's expected here: the first test run came after an edit, so there is no Baseline run and both failures count as new. Run the tests before any edit, and the same two show as already failing instead.
+3. Type `/guide trace`: the turn's steps, whether it was verified, its flag with **Tell Claude**, and the Reading List. Views you open stay as tabs in the pane.
+4. Type `/guide ledger`: each run's counts and failing tests, and the flag. Opening it acknowledges *Ended red*, so the band goes back to live facts: `Field Guide · pytest 3 passed, 2 failed · context N%`.
+5. Narrow the terminal to about 80 columns: the band truncates to fit, and panes open inline when you ask for them.
+
+If your settings deny the Read tool, as some lean-ctx setups do, Claude can't use Edit: add *use ctx_patch if the Edit tool is blocked* to step 1. Field Guide reads lean-ctx's `ctx_shell`, `ctx_read`, `ctx_patch`, and `ctx_search` like the built-in tools.
+
 ## What it shows
 
 | View | Opens with | Shows |

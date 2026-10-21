@@ -93,7 +93,8 @@ export function summarize(use: ToolUse, cwd = ''): string {
   const field = SUMMARY_FIELD[use.tool]
   const value = field ? use.input[field] : undefined
   if (typeof value !== 'string') return ''
-  const line = relativeTo(cwd, value.split('\n')[0].trim())
+  // A leading change into the session folder says nothing; what follows it is the command.
+  const line = relativeTo(cwd, value.split('\n')[0].trim()).replace(/^cd \. && /, '')
   return line.length > SUMMARY_LIMIT ? line.slice(0, SUMMARY_LIMIT - 1) + '…' : line
 }
 

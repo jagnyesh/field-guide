@@ -8,4 +8,9 @@ describe('Paths for display', () => {
     expect(relativeTo('/work/app', '/work/application/x.py')).toBe('/work/application/x.py')
     expect(relativeTo('', '/work/app/a.txt')).toBe('/work/app/a.txt')
   })
+
+  test('the session folder itself shows as "."', async () => {
+    expect(relativeTo('/work/app', 'cd /work/app && pytest -q')).toBe('cd . && pytest -q')
+  })
 })
+

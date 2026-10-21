@@ -201,5 +201,10 @@ describe('Transcript Reader', () => {
     ])
     expect(turn.steps[0].run?.failed).toBe(2)
   })
+
+  test('a summary drops a leading change into the session folder', async () => {
+    const [turn] = buildTimeline([prompt('go'), reply('', [use('s', 'mcp__lean-ctx__ctx_shell', { command: 'cd /work/app && .venv/bin/python -m pytest -q' })])], undefined, undefined, '/work/app')
+    expect(turn.steps[0].summary).toBe('.venv/bin/python -m pytest -q')
+  })
 })
 

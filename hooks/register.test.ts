@@ -615,5 +615,16 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /edit\s+ctx_shell\s+python tools\/rewrite\.py · via shell, exact: src\/settings\.ini/ })).toBeDefined()
     await ui.unmount()
   })
+
+  test('a turn with no edit says tests ran, not that they ran after an edit', async ($, on) => {
+    standIn(on, [
+      { role: 'user', text: 'run the tests', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'p', tool: 'Bash', input: { command: 'pytest -q' }, text: OUTPUT['all-pass'] }] },
+    ])
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /^Tests ran this turn$/ })).toBeDefined()
+    await ui.unmount()
+  })
 })
 
