@@ -148,3 +148,16 @@ describe('Loop Flags: Test changed to pass', () => {
     expect(found(keyword)).toEqual([])
   })
 })
+
+describe('Loop Flags: other runners', () => {
+  test('a Red step is recognised from vitest ids too', async () => {
+    const vitestRun = (id: string, failing: string[]) =>
+      use(id, 'Bash', { command: 'npx vitest run' }, [...failing.map(f => ` FAIL  ${f}`), `      Tests  ${failing.length} failed | 3 passed (4)`].join('\n'))
+    const turns = session([vitestRun('v1', [])], [
+      use('w', 'Write', { file_path: '/work/tests/feature.test.ts', content: 'test("feature works", () => {})' }),
+      vitestRun('v2', ['tests/feature.test.ts > feature works']),
+    ])
+    expect(kinds(turns)).toEqual(['red-step'])
+  })
+})
+

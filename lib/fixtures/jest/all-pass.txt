@@ -1,0 +1,12 @@
+PASS tests/limit.test.js
+  ✓ lookup alpha
+  ○ skipped later
+  statusFor
+    ✓ under limit (1 ms)
+    ✓ over limit
+
+Test Suites: 1 passed, 1 total
+Tests:       1 skipped, 3 passed, 4 total
+Snapshots:   0 total
+Time:        0.115 s, estimated 1 s
+Ran all test suites.

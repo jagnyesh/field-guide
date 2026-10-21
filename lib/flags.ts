@@ -1,4 +1,4 @@
-import { covers } from './testrun'
+import { covers, testIdFile } from './testrun'
 import type { TestRun } from './testrun'
 import { flatSteps, verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
@@ -45,10 +45,7 @@ export function alreadyFailing(session: readonly Turn[]): Map<string, Set<string
   return new Map([...baselines(session)].map(([runner, run]) => [runner, new Set(run.failingIds)]))
 }
 
-// The file part of a test id ("tests/test_a.py::test_b" is in "tests/test_a.py").
-function testFile(id: string): string {
-  return id.split('::')[0]
-}
+const testFile = testIdFile
 
 // Tools write absolute paths, runners print paths relative to their root: compare by suffix.
 function samePath(a: string, b: string): boolean {

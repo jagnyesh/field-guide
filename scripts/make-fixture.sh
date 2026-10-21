@@ -61,9 +61,33 @@ echo "private note: $MARKER" > data/notes.txt
 echo "alpha file one" > a.txt
 echo "bravo file two" > b.txt
 
+# A small JavaScript project too, when asked (it needs npm and network access): FIELD_GUIDE_JS=1.
+if [ "${FIELD_GUIDE_JS:-}" = "1" ]; then
+  mkdir -p js/src js/tests
+  cat > js/package.json <<'JSON'
+{ "name": "fixture-js", "private": true, "version": "0.0.0", "type": "commonjs" }
+JSON
+  echo "module.exports = { test: { globals: true } }" > js/vitest.config.js
+  cat > js/src/limit.js <<'JS'
+function statusFor(n) { return n > 10 ? 429 : 200 }
+const KNOWN = { alpha: 'found' }
+function lookup(key) { return KNOWN[key] || 'missing' }
+module.exports = { statusFor, lookup }
+JS
+  cat > js/tests/limit.test.js <<JS
+const { statusFor, lookup } = require('../src/limit')
+describe('statusFor', () => {
+  test('under limit', () => { expect(statusFor(3)).toBe(200) })
+  test('over limit', () => { expect(statusFor(11)).toBe(403) })
+})
+test.each(['$MARKER', 'alpha'])('lookup %s', key => { expect(lookup(key)).toBe('found') })
+JS
+  (cd js && npm install --silent --no-audit --no-fund vitest@2.1.9 > /dev/null 2>&1)
+fi
+
 uv venv -q .venv
 uv pip install -q --python .venv/bin/python "pytest==8.3.3"
-printf '.venv/\n__pycache__/\n.pytest_cache/\n' > .gitignore
+printf '.venv/\n__pycache__/\n.pytest_cache/\nnode_modules/\n' > .gitignore
 
 git init -q
 git add -A

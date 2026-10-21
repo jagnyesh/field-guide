@@ -100,7 +100,7 @@ describe('Transcript Reader', () => {
       prompt('go'),
       reply('', [
         use('p', 'Bash', { command: '.venv/bin/python -m pytest -q' }, OUTPUT.quiet),
-        use('j', 'Bash', { command: 'npm test' }, 'Tests: 2 passed, 2 total'),
+        use('j', 'Bash', { command: 'npm test' }, '> test\n> mocha\n\n  2 passing (5ms)'),
         use('l', 'Bash', { command: 'ruff check .' }, 'All checks passed!'),
       ]),
     ])

@@ -51,6 +51,10 @@ if scenario == "changed-to-pass":
     check("test-changed-to-pass" in kinds, f"a failing test made to pass by editing only the test raises the flag ({kinds})")
     check("ended-red" not in kinds, f"no Ended red, since only already-failing tests remain ({kinds})")
 
+if scenario == "vitest":
+    check(len(runs) == 1 and runs[0]["runner"] == "vitest", f"one vitest run was read ({[r['runner'] for r in runs]})")
+    check(bool(runs) and (runs[0]["passed"], runs[0]["failed"]) == (2, 2), f"counts match the JS fixture ({runs[0] if runs else None})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

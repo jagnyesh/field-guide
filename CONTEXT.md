@@ -79,7 +79,7 @@ A test id that failed and then passed, where every edit between the two runs was
 _Avoid_: weakened assertion, cheating
 
 **Metadata-only rule**:
-No text from a tool result or a message leaves the transcript. Field Guide copies only paths, test ids, counts, sizes, timings, flag kinds, and search queries. Test ids lose their parameter part, and queries are left out, everywhere except the developer's own view of the pane.
+No text from a tool result or a message leaves the transcript. Field Guide copies only paths, test ids, counts, sizes, timings, flag kinds, and search queries. Test ids lose their parameter part, and queries are left out, everywhere except the developer's own view of the pane. A vitest or jest id keeps only its file there, since those runners write parameter values into the test's name.
 _Avoid_: redaction (nothing is detected or removed; content is never copied)
 
 ## Relationships

@@ -1,0 +1,10 @@
+
+ RUN  v2.1.9 /work
+
+ ✓ tests/limit.test.js (4 tests | 1 skipped) 1ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 1 skipped (4)
+   Start at  00:01:14
+   Duration  174ms (transform 7ms, setup 0ms, collect 4ms, tests 1ms, environment 0ms, prepare 27ms)
+

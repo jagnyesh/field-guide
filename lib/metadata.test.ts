@@ -3,6 +3,7 @@ import { judge } from './flags'
 import { debugLine, stripParams } from './metadata'
 import { buildTimeline } from './transcript'
 import { OUTPUT } from './fixtures/pytest'
+import { OUTPUT as VITEST } from './fixtures/vitest'
 
 // Planted in every field that can carry content: if any copy of it leaves, the rule is broken.
 export const MARKER = 'FG_MARKER_7f3a'
@@ -50,7 +51,9 @@ describe('Metadata-only rule: the debug line', () => {
   test('a test id keeps its file and name and loses its parameters', async () => {
     expect(stripParams(`tests/test_lookup.py::test_lookup[${MARKER}-2]`)).toBe('tests/test_lookup.py::test_lookup[…]')
     expect(stripParams('tests/test_x.py::TestA::test_b')).toBe('tests/test_x.py::TestA::test_b')
-    expect(stripParams('src/a.test.ts > adds > [case 1]')).toBe('src/a.test.ts > adds > […]')
+    // vitest and jest put parameter values into the test's name, so only the file is safe to keep.
+    expect(stripParams(`tests/limit.test.js > lookup ${MARKER}`)).toBe('tests/limit.test.js > …')
+    expect(stripParams('tests/limit.test.js › statusFor › over limit')).toBe('tests/limit.test.js › …')
   })
 
   test("carries each test run's counts and failing ids without parameters, and the turn's verification", async () => {
@@ -83,4 +86,15 @@ describe('Metadata-only rule: the debug line', () => {
     const line = JSON.parse(debugLine(turns, judge(turns[0]) ?? []))
     expect(line.findings).toEqual([{ kind: 'unverified-edit', level: 'flag' }])
   })
+
+  test('a vitest run whose test name carries a parameter leaves no trace of it in the debug line', async () => {
+    const turns = buildTimeline([
+      { role: 'user', text: 'go' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'v', tool: 'Bash', input: { command: 'npx vitest run' }, text: VITEST.fail }] },
+    ])
+    const line = debugLine(turns)
+    expect(JSON.parse(line).turns[0].steps[0].run.failingIds).toEqual(['tests/limit.test.js > …', 'tests/limit.test.js > …'])
+    expect(line).not.toContain(MARKER)
+  })
 })
+

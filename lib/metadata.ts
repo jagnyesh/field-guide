@@ -3,9 +3,12 @@ import type { TestRun } from './testrun'
 import { verificationOf } from './transcript'
 import type { Step, Turn } from './transcript'
 
-// Parameter values can carry data (pytest puts them into the id), so outside the developer's own
-// pane an id keeps only its file and test name.
+// Parameter values can carry data, so outside the developer's own pane: a pytest id keeps its
+// file and test name but not its bracketed parameters; a vitest or jest id keeps only its file,
+// since those runners write parameter values into the test's name.
 export function stripParams(id: string): string {
+  const js = / > | › /.exec(id)
+  if (js) return `${id.slice(0, js.index)}${js[0]}…`
   return id.replace(/\[[^\]]*\]/g, '[…]')
 }
 

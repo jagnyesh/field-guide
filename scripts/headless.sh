@@ -8,6 +8,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 plugin="$(dirname "$here")"
 scenario="$1"
+[ "$scenario" = vitest ] && export FIELD_GUIDE_JS=1
 prompt_file="$here/scenarios/$scenario.prompt"
 [ -f "$prompt_file" ] || { echo "headless: no scenario $scenario" >&2; exit 2; }
 
@@ -34,7 +35,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   (cd "$fixture" && FIELD_GUIDE_DEBUG=1 claude -p --model haiku \
       --setting-sources project,local --strict-mcp-config \
       --plugin-dir "$plugin" \
-      --allowedTools Read Grep Glob Edit Write "Bash(cat:*)" "Bash(.venv/bin/python -m pytest:*)" "Bash(sed:*)" Agent Task \
+      --allowedTools Read Grep Glob Edit Write "Bash(cat:*)" "Bash(.venv/bin/python -m pytest:*)" "Bash(sed:*)" "Bash(cd js && npx vitest run:*)" Agent Task \
       --debug-file "$out/debug-$turn.log" \
       --output-format json ${resume[@]+"${resume[@]}"} "$line" < /dev/null > "$out/result-$turn.json")
   session="$(python3 -I "$here/json-field.py" "$out/result-$turn.json" session_id)"
