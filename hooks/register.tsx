@@ -4,24 +4,33 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 import { alreadyFailing, judge } from '../lib/flags'
 import type { Finding } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
+import { diffCompaction } from '../lib/compaction'
 import { readingLists } from '../lib/readinglist'
-import type { ReadingEntry } from '../lib/readinglist'
+import type { EarlierReads, ReadingEntry } from '../lib/readinglist'
 import { creditChanges, parseStatus } from '../lib/shelledit'
-import type { ProbeRecord } from '../types'
+import type { CompactionMemory, EarlierRead, ProbeRecord } from '../types'
 import { buildTimeline, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 import type { TestRun } from '../lib/testrun'
 
 const TRACE = 'field-guide-trace'
 const LEDGER = 'field-guide-ledger'
+const AUTOPSY = 'field-guide-autopsy'
 const VIEWS: Readonly<Record<string, { id: string; title: string }>> = {
   trace: { id: TRACE, title: 'Loop Trace' },
   ledger: { id: LEDGER, title: 'Red/Green Ledger' },
+  autopsy: { id: AUTOPSY, title: 'Compaction Autopsy' },
 }
 
 // Rebuilt from the transcript at every session start (which a resume and a hot reload both raise)
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
+// Reads from before the last compaction, the compactions so far, and the latest summary's text
+// (held in memory only, read back from the transcript).
+let earlier: EarlierReads = { reads: [], reattached: [] }
+let compactionCount = 0
+let summaryText: string | null = null
+const SUMMARY_START = /^This session is being continued from a previous conversation/
 
 // Which flags were toasted, kept by the host so a hot reload doesn't toast them again.
 const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as string[])
@@ -29,6 +38,9 @@ const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as s
 const acknowledged = atom({ plugin: 'field-guide', key: 'acknowledged' } as const, [] as string[])
 // The Live Probe's facts per shell call, which the transcript doesn't keep (ADR 0002).
 const probe = atom({ plugin: 'field-guide', key: 'probe' } as const, {} as Record<string, ProbeRecord>)
+const EMPTY_MEMORY: CompactionMemory = { compactions: [], earlierReads: [], reattached: [], window: 'closed' }
+const MEMORY_PREFIX = 'compaction:'
+const MEMORY_SESSIONS = 20
 const PROBE_KEEP = 500
 const SNAPSHOT_TIMEOUT_MS = 2_000
 const STAT_LIMIT = 200
@@ -60,6 +72,10 @@ async function rebuild($: EngineInterface): Promise<void> {
   }
   const facts = await read($, probe)
   timeline = buildTimeline(main, agentId => subagents.get(agentId), id => facts[id])
+  const memory = await loadMemory($)
+  earlier = { reads: memory.earlierReads, reattached: memory.reattached }
+  compactionCount = memory.compactions.length
+  summaryText = main.find(row => row.role === 'user' && SUMMARY_START.test(row.text.trimStart()))?.text ?? null
   const latest = timeline[timeline.length - 1]
   latestSettled = latest?.isSettled ?? true
   findings = (latest && judge(latest, timeline)) || []
@@ -77,8 +93,9 @@ async function readUsage($: EngineInterface): Promise<void> {
   }
 }
 
+// Turn numbers start again after a compaction, so a key also names how many came before.
 function flagKey(finding: Finding): string {
-  return `${timeline.length - 1}:${finding.kind}`
+  return `${compactionCount}:${timeline.length - 1}:${finding.kind}`
 }
 
 // One toast per flag per Settled turn, raised only as a turn ends: a resume or reload rebuilds
@@ -174,8 +191,53 @@ function verificationLine(turn: Turn): string | null {
 
 function entryLine(entry: ReadingEntry): string {
   const by = entry.agent ? ` (by ${entry.agent})` : ''
-  return entry.kind === 'read' ? `  read      ${entry.path}${by}` : `  searched  ${entry.query}${by}`
+  if (entry.kind === 'search') return `  searched  ${entry.query}${by}`
+  const mark = entry.compaction === 're-attached' ? ' · re-attached after compaction' : entry.compaction ? ' · read before compaction' : ''
+  return `  read      ${entry.path}${by}${mark}`
 }
+
+function tokens(n: number | undefined): string {
+  return n === undefined ? '?' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+// Every path read so far, for the Reading List to keep once a compaction folds the reads away.
+function readsSoFar(): EarlierRead[] {
+  const agentTypes = new Map(timeline.flatMap(flatSteps).flatMap(s => (s.agentType && s.agentId ? [[s.agentId, s.agentType] as const] : [])))
+  return timeline.flatMap(flatSteps).flatMap(step => {
+    if (step.kind !== 'read') return []
+    const agent = step.agentId ? agentTypes.get(step.agentId) : undefined
+    return (step.path ? [step.path] : (step.shellReads ?? [])).map(path => (agent ? { path, agent } : { path }))
+  })
+}
+
+// A resumed session keeps its first launch time, so it finds its own memory again.
+async function memoryKey($: EngineInterface): Promise<string> {
+  return `${MEMORY_PREFIX}${(await $.session.usage()).startedAt}`
+}
+
+async function loadMemory($: EngineInterface): Promise<CompactionMemory> {
+  try {
+    const stored = (await $.store.get(await memoryKey($))) as CompactionMemory | undefined
+    return stored ?? EMPTY_MEMORY
+  } catch (err) {
+    fail($, 'store', err)
+    return EMPTY_MEMORY
+  }
+}
+
+async function saveMemory($: EngineInterface, change: (memory: CompactionMemory) => CompactionMemory): Promise<void> {
+  const key = await memoryKey($)
+  const memory = change(((await $.store.get(key)) as CompactionMemory | undefined) ?? EMPTY_MEMORY)
+  await $.store.set(key, memory)
+  const old = (await $.store.keys())
+    .filter(k => k.startsWith(MEMORY_PREFIX))
+    .sort((a, b) => Number(a.slice(MEMORY_PREFIX.length)) - Number(b.slice(MEMORY_PREFIX.length)))
+    .slice(0, -MEMORY_SESSIONS)
+  for (const k of old) await $.store.delete(k)
+}
+
+// The Read tool's input opens a re-attached file's text: `... input: {"file_path":"/x/a.txt"}`.
+const REATTACHED_PATH = /"file_path"\s*:\s*"([^"]+)"/
 
 function shellEditLabel(step: Step): string {
   if (!step.shellEdit) return ''
@@ -241,8 +303,8 @@ async function snapshot($: EngineInterface, id: string, start: number, end: numb
 async function logDebug($: EngineInterface): Promise<void> {
   if ((await $.env.get('FIELD_GUIDE_DEBUG')) !== '1') return
   const latest = timeline[timeline.length - 1]
-  const lists = latest ? readingLists(latest, timeline) : []
-  $.ui.log(`field-guide: ${debugLine(timeline, findings, lists)}`, { to: 'debug' })
+  const lists = latest ? readingLists(latest, timeline, earlier) : []
+  $.ui.log(`field-guide: ${debugLine(timeline, findings, lists, (await loadMemory($)).compactions)}`, { to: 'debug' })
 }
 
 function latestTurn(): Turn | undefined {
@@ -261,7 +323,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     try {
-      await $.command.register({ name: 'guide', description: 'Field Guide: open a view', argumentHint: 'trace | ledger' })
+      await $.command.register({ name: 'guide', description: 'Field Guide: open a view', argumentHint: 'trace | ledger | autopsy' })
       await rebuild($)
     } catch (err) {
       fail($, 'session.start', err)
@@ -287,6 +349,70 @@ export const register: Register = on => {
     return result
   })
 
+  // The main conversation's compactions: what they kept, and the reads they folded away.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    try {
+      if (e.agentId || e.trigger === 'precompute') return result
+      const record = diffCompaction(e, result)
+      if (!record) return result
+      const reads = readsSoFar()
+      await saveMemory($, memory => {
+        const merged = [...memory.earlierReads]
+        for (const entry of reads) if (!merged.some(r => r.path === entry.path)) merged.push(entry)
+        return { compactions: [...memory.compactions, record].slice(-50), earlierReads: merged.slice(-500), reattached: [], window: 'pending' }
+      })
+    } catch (err) {
+      fail($, 'session.compact', err)
+    }
+    return result
+  })
+
+  // On the first request after a compaction the engine attaches recently read files again (spike #2).
+  on('prompt.attachment', async ($, e, next) => {
+    try {
+      if (e.type === 'file' && (await loadMemory($)).window !== 'closed') {
+        const path = REATTACHED_PATH.exec(e.text.split('\n')[0])?.[1]
+        if (path) await saveMemory($, m => (m.reattached.includes(path) ? m : { ...m, reattached: [...m.reattached, path] }))
+      }
+    } catch (err) {
+      fail($, 'prompt.attachment', err)
+    }
+    return next(e)
+  })
+
+  on('turn.start', async ($, e, next) => {
+    try {
+      if (!e.agentId && (await loadMemory($)).window === 'pending') await saveMemory($, m => ({ ...m, window: 'in-turn' }))
+    } catch (err) {
+      fail($, 'turn.start', err)
+    }
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: AUTOPSY }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const records = (await loadMemory($)).compactions
+    if (records.length === 0) {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>No compactions yet.</Text>
+        </Box>
+      )
+    }
+    return (
+      <Box flexDirection="column">
+        {records.map((r, i) => (
+          <Text key={`compaction:${i}`}>
+            {`Compaction ${i + 1} · ${r.trigger} · ${tokens(r.tokensBefore)} → ${tokens(r.tokensAfter)} tokens · ${r.kept} kept word for word · ${r.summarised} summarised`}
+          </Text>
+        ))}
+        {summaryText && <Text bold>Latest summary</Text>}
+        {summaryText && <Text dimColor>{summaryText}</Text>}
+      </Box>
+    )
+  })
+
   // A subagent can finish after the main loop stops, so its own turn end rebuilds too.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
@@ -295,6 +421,7 @@ export const register: Register = on => {
       if (!e.agentId) {
         await toastNewFlags($)
         await logDebug($)
+        if ((await loadMemory($)).window === 'in-turn') await saveMemory($, m => ({ ...m, window: 'closed' }))
       }
     } catch (err) {
       fail($, 'turn.complete', err)
@@ -394,7 +521,7 @@ export const register: Register = on => {
         <Text bold>Turn {turn.index + 1}</Text>
         {verificationLine(turn) && <Text dimColor>{verificationLine(turn)}</Text>}
         {turn.index === timeline.length - 1 && findingList($, e, 'trace')}
-        {readingLists(turn, timeline).flatMap(list => [
+        {readingLists(turn, timeline, earlier).flatMap(list => [
           <Text key={`list:${list.file}`} bold>{`Reading List · ${list.file}`}</Text>,
           ...(list.entries.length
             ? list.entries.map((entry, i) => (

@@ -69,6 +69,14 @@ if scenario == "reading-list":
     check(("src/ratelimit.py", "Explore") in paths, f"the subagent's read is listed under it ({paths})")
     check(("src/settings.ini", None) in paths, f"the main loop's read is listed ({paths})")
 
+if scenario == "compaction":
+    check(len(last.get("compactions", [])) == 1, f"one compaction was recorded ({last.get('compactions')})")
+    lists = {entry["file"]: entry["reads"] for entry in last.get("readingLists", [])}
+    reads = next((reads for file, reads in lists.items() if file.endswith("src/settings.ini")), [])
+    marks = {r["path"].split("/")[-1]: r.get("compaction") for r in reads}
+    check(marks.get("a.txt") == "re-attached", f"a.txt, read with the Read tool, is re-attached ({marks})")
+    check(marks.get("b.txt") == "read before", f"b.txt, read through the shell, is marked read before compaction ({marks})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

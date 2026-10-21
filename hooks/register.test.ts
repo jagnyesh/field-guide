@@ -383,5 +383,50 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /searched\s+def lookup/ })).toBeDefined()
     await ui.unmount()
   })
+
+  test('after a compaction, the Reading List keeps earlier reads, marking which the engine re-attached; /guide autopsy shows the record', async ($, on) => {
+    const before = [
+      { role: 'user', text: 'look at the notes', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'r1', tool: 'Read', input: { file_path: '/work/a.txt' }, text: 'alpha' },
+          { tool_use_id: 'c1', tool: 'Bash', input: { command: 'cat /work/b.txt' }, text: 'bravo' },
+        ],
+      },
+    ]
+    const after = [
+      { role: 'user', text: 'This session is being continued from a previous conversation. Summary: read notes.', toolUses: [] },
+      { role: 'user', text: 'now edit c', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'e1', tool: 'Edit', input: { file_path: '/work/src/c.py' }, text: 'ok' }] },
+    ]
+    let rows = before
+    mock.env(on, {})
+    standIn(on, () => rows)
+    on('session.compact', () => ({ messages: [{ role: 'user', text: after[0].text, toolUses: [], handle: 's1' }], tokensBefore: 30_000, tokensAfter: 2_000 }))
+    on('prompt.attachment', (_, e) => e)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.session.compact({
+      trigger: 'manual',
+      messages: [
+        { role: 'user', text: 'look at the notes', toolUses: [], handle: 'h1' },
+        { role: 'assistant', text: '', toolUses: [], handle: 'h2' },
+      ],
+    })
+    rows = after
+    await $.prompt.attachment({ type: 'file', text: 'Called the Read tool with the following input: {"file_path":"/work/a.txt"}\nalpha', origin: { kind: 'engine' } })
+    await $.turn.complete(DONE)
+    const trace = await $.ui.mount(TRACE)
+    expect(await trace.find({ type: 'Text', text: /read\s+\/work\/a\.txt · re-attached after compaction/ })).toBeDefined()
+    expect(await trace.find({ type: 'Text', text: /read\s+\/work\/b\.txt · read before compaction/ })).toBeDefined()
+    await trace.unmount()
+    await $.command.run({ ...RUN, args: 'autopsy' })
+    const autopsy = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-autopsy', props: { title: 'Compaction Autopsy', ...PANE_PROPS } })
+    expect(await autopsy.find({ type: 'Text', text: /Compaction 1 · .* · 30\.0k → 2\.0k tokens · 0 kept word for word · 2 summarised/ })).toBeDefined()
+    expect(await autopsy.find({ type: 'Text', text: /This session is being continued/ })).toBeDefined()
+    await autopsy.unmount()
+  })
 })
 

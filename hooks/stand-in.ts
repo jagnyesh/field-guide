@@ -1,3 +1,5 @@
+import { mock } from 'claude-code/testing'
+
 // What the engine answers beneath the plugin in a session, for the hooks tests.
 export type StandIn = {
   logs: string[]
@@ -18,6 +20,7 @@ export type StandInOptions = {
 
 export function standIn(on: any, rows: unknown[] | ((e: { agentId?: string }) => unknown[]) = [], options: StandInOptions = {}): StandIn {
   const seen: StandIn = { logs: [], opened: [], toasts: [], statuses: [], filled: [], processes: [] }
+  mock.store(on)
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.messages', (_: unknown, e: { agentId?: string }) => ({ value: typeof rows === 'function' ? rows(e ?? {}) : rows }))
   on('ui.open', (_: unknown, e: { id: string }) => {

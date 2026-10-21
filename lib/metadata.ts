@@ -1,3 +1,4 @@
+import type { CompactionRecord } from './compaction'
 import type { Finding } from './flags'
 import type { ReadingList } from './readinglist'
 import type { TestRun } from './testrun'
@@ -46,15 +47,26 @@ function stepMetadata(step: Step): StepMetadata {
 function listMetadata(list: ReadingList) {
   return {
     file: list.file,
-    reads: list.entries.flatMap(entry => (entry.kind === 'read' ? [entry.agent ? { path: entry.path, agent: entry.agent } : { path: entry.path }] : [])),
+    reads: list.entries.flatMap(entry =>
+      entry.kind === 'read'
+        ? [{ path: entry.path, ...(entry.agent ? { agent: entry.agent } : {}), ...(entry.compaction ? { compaction: entry.compaction } : {}) }]
+        : [],
+    ),
     searches: list.entries.filter(entry => entry.kind === 'search').length,
   }
 }
 
-export function debugLine(turns: readonly Turn[], findings: readonly Finding[] = [], lists: readonly ReadingList[] = []): string {
+export function debugLine(
+  turns: readonly Turn[],
+  findings: readonly Finding[] = [],
+  lists: readonly ReadingList[] = [],
+  compactions: readonly CompactionRecord[] = [],
+): string {
   return JSON.stringify({
     turns: turns.map(turn => ({ index: turn.index, verification: verificationOf(turn), steps: turn.steps.map(stepMetadata) })),
     findings: findings.map(({ kind, level }) => ({ kind, level })),
     readingLists: lists.map(listMetadata),
+    // Token counts stay out: the engine's debug log redacts fields named for tokens, breaking the line.
+    compactions: compactions.map(({ trigger, kept, summarised }) => ({ trigger, kept, summarised })),
   })
 }

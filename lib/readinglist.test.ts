@@ -42,5 +42,16 @@ describe('Reading List', () => {
       { kind: 'read', path: 'tests/test_lookup.py' },
     ])
   })
+
+  test('reads from before a compaction stay on the list: re-attached when the engine attached them again, otherwise marked', async () => {
+    const turns = buildTimeline([prompt('after the compaction'), reply([read('r', 'src/c.py'), edit('e', 'src/c.py')])])
+    const earlier = { reads: [{ path: 'a.txt' }, { path: 'b.txt' }, { path: 'src/c.py' }], reattached: ['a.txt'] }
+    const [list] = readingLists(turns[0], turns, earlier)
+    expect(list.entries).toEqual([
+      { kind: 'read', path: 'a.txt', compaction: 're-attached' },
+      { kind: 'read', path: 'b.txt', compaction: 'read before' },
+      { kind: 'read', path: 'src/c.py' },
+    ])
+  })
 })
 

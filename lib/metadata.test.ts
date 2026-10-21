@@ -126,5 +126,17 @@ describe('Metadata-only rule: the debug line', () => {
     expect(JSON.parse(line).readingLists).toEqual([{ file: 'src/a.py', reads: [{ path: 'src/a.py' }], searches: 1 }])
     expect(line).not.toContain(MARKER)
   })
+
+  test('carries compaction marks on reads, and the compaction records', async () => {
+    const turns = buildTimeline([
+      { role: 'user', text: 'go' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'e', tool: 'Edit', input: { file_path: 'c.py' } }] },
+    ])
+    const lists = readingLists(turns[0], turns, { reads: [{ path: 'a.txt' }, { path: 'b.txt' }], reattached: ['a.txt'] })
+    const record = { trigger: 'manual', tokensBefore: 30_000, tokensAfter: 2_000, kept: 1, summarised: 5 }
+    const line = JSON.parse(debugLine(turns, [], lists, [record]))
+    expect(line.readingLists[0].reads).toEqual([{ path: 'a.txt', compaction: 're-attached' }, { path: 'b.txt', compaction: 'read before' }])
+    expect(line.compactions).toEqual([{ trigger: 'manual', kept: 1, summarised: 5 }])
+  })
 })
 
