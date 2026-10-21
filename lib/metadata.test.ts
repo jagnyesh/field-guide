@@ -29,4 +29,19 @@ describe('Metadata-only rule: the debug line', () => {
   test('never carries text from a message, a tool result, or a command', async () => {
     expect(debugLine(buildTimeline(markedTranscript()))).not.toContain(MARKER)
   })
+
+  test("carries each step's kind, and a subagent's steps under the Agent step with the same fields", async () => {
+    const turns = buildTimeline(
+      [
+        { role: 'user', text: 'go' },
+        { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'a', tool: 'Agent', input: { description: MARKER }, agentId: 'a1' }] },
+      ],
+      () => [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 's', tool: 'Read', input: { file_path: 'x' }, text: MARKER }] }],
+    )
+    const line = debugLine(turns)
+    const step = JSON.parse(line).turns[0].steps[0]
+    expect(step.kind).toBe('delegate')
+    expect(step.children.map((c: { tool: string; kind: string }) => [c.tool, c.kind])).toEqual([['Read', 'read']])
+    expect(line).not.toContain(MARKER)
+  })
 })

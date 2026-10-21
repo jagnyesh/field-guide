@@ -1,0 +1,1 @@
+Use the Agent tool with subagent_type Explore and the prompt 'Use the Read tool to read a.txt and reply with its first word only.' When the subagent has answered, reply with the single word: done

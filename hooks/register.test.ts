@@ -79,4 +79,35 @@ describe('Loop Trace pane', () => {
     expect(result.text).toBe('the answer')
     expect(engine.logs.some(line => line.startsWith('field-guide: turn.complete failed'))).toBe(true)
   })
+
+  test('Loop Trace shows each step\'s kind, marks failed calls, and nests a subagent\'s steps under it', async ($, on) => {
+    const main = [
+      { role: 'user', text: 'find the callers', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: 'g', tool: 'Grep', input: { pattern: 'greet' }, text: '', isError: true },
+          { tool_use_id: 'a', tool: 'Agent', input: { description: 'Find callers', subagent_type: 'Explore' }, text: 'ok', agentId: 'a1' },
+        ],
+      },
+    ]
+    const sub = [
+      { role: 'user', text: 'Find callers of greet', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 's', tool: 'Read', input: { file_path: 'c.py' }, text: 'x' }] },
+    ]
+    const asked: (string | undefined)[] = []
+    standIn(on, e => {
+      asked.push(e.agentId)
+      return e.agentId === 'a1' ? sub : main
+    })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.command.run({ command: 'guide', args: 'trace', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 160 } })
+    const ui = await $.ui.mount(TRACE)
+    expect(asked).toContain('a1')
+    expect(await ui.find({ type: 'Text', text: /^✗ search\s+Grep\s+greet/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /delegate\s+Agent\s+Find callers/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /↳ Explore › read\s+Read\s+c\.py/ })).toBeDefined()
+    await ui.unmount()
+  })
 })

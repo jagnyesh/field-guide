@@ -1,3 +1,6 @@
+import { classify } from './classify'
+import type { StepKind } from './classify'
+
 export type ToolUse = {
   readonly tool_use_id: string
   readonly tool: string
@@ -17,10 +20,19 @@ export type TranscriptMessage = {
 export type Step = {
   readonly id: string
   readonly tool: string
+  readonly kind: StepKind
   readonly summary: string
   readonly isError: boolean
   readonly resultSize: number
+  // Set on a subagent's own steps, and on an Agent step that started one.
+  readonly agentId?: string
+  // On an Agent step: the kind of subagent it started, and that subagent's steps.
+  readonly agentType?: string
+  readonly children?: readonly Step[]
 }
+
+// A subagent's transcript by its id, as the engine keeps it; undefined when it can't be read.
+export type SubagentRows = (agentId: string) => readonly TranscriptMessage[] | undefined
 
 const SUMMARY_LIMIT = 80
 
@@ -48,14 +60,25 @@ export function summarize(use: ToolUse): string {
   return line.length > SUMMARY_LIMIT ? line.slice(0, SUMMARY_LIMIT - 1) + '…' : line
 }
 
-function toStep(use: ToolUse): Step {
-  return {
+function toolUses(messages: readonly TranscriptMessage[]): ToolUse[] {
+  return messages.flatMap(message => (message.role === 'assistant' ? (message.toolUses ?? []) : []))
+}
+
+function toStep(use: ToolUse, subagents: SubagentRows, agentId?: string): Step {
+  const step: Step = {
     id: use.tool_use_id,
     tool: use.tool,
+    kind: classify(use.tool, use.input),
     summary: summarize(use),
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
+    ...(agentId ? { agentId } : {}),
   }
+  if (step.kind !== 'delegate' || !use.agentId) return step
+  const rows = subagents(use.agentId)
+  const childId = use.agentId
+  const agentType = typeof use.input.subagent_type === 'string' ? use.input.subagent_type : 'subagent'
+  return { ...step, agentId: childId, agentType, children: rows ? toolUses(rows).map(child => toStep(child, subagents, childId)) : [] }
 }
 
 export type Turn = {
@@ -75,7 +98,12 @@ export function isDeveloperPrompt(message: TranscriptMessage): boolean {
   return text.length > 0 && !ENGINE_WRITTEN.some(pattern => pattern.test(text))
 }
 
-export function buildTimeline(messages: readonly TranscriptMessage[]): Turn[] {
+// The agent ids a transcript's Agent steps started; the session's agent list is empty after a resume.
+export function startedAgents(messages: readonly TranscriptMessage[]): string[] {
+  return toolUses(messages).flatMap(use => (use.agentId && classify(use.tool, use.input) === 'delegate' ? [use.agentId] : []))
+}
+
+export function buildTimeline(messages: readonly TranscriptMessage[], subagents: SubagentRows = () => undefined): Turn[] {
   const turns: Turn[] = []
   for (const message of messages) {
     if (message.role === 'user') {
@@ -85,7 +113,7 @@ export function buildTimeline(messages: readonly TranscriptMessage[]): Turn[] {
     const turn = turns[turns.length - 1]
     if (!turn) continue
     for (const use of message.toolUses ?? []) {
-      turn.steps.push(toStep(use))
+      turn.steps.push(toStep(use, subagents))
     }
   }
   return turns

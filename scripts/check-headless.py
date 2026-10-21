@@ -1,11 +1,13 @@
 """Checks a headless run's debug log: the plugin's lines, and the metadata-only rule."""
 import json
+import os
 import sys
 
 MARKER = "FG_MARKER_7f3a"
 PREFIX = "field-guide: {"
 
 scenario, log = sys.argv[1], sys.argv[2]
+prompts = [line for line in open(os.path.join(os.path.dirname(__file__), "scenarios", scenario + ".prompt")) if line.strip()]
 ours = [line[line.index(PREFIX) + len("field-guide: "):] for line in open(log, errors="replace") if PREFIX in line]
 failures = []
 
@@ -24,5 +26,14 @@ tools = [step["tool"] for turn in last["turns"] for step in turn["steps"]]
 
 if scenario == "skeleton":
     check(tools[:2] == ["Read", "Bash"], f"steps are Read then Bash (got {tools})")
+
+if scenario in ("subagent", "subagent-resume"):
+    first = last["turns"][0]["steps"] if last["turns"] else []
+    agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)
+    # The model may call tools in any turn; what must hold is that a hand-back never starts a turn.
+    check(len(last["turns"]) == len(prompts), f"one Settled turn per developer prompt ({len(last['turns'])} for {len(prompts)})")
+    check(agent is not None and agent["kind"] == "delegate", "the Agent step is delegate")
+    children = [child["tool"] for child in (agent or {}).get("children", [])]
+    check("Read" in children, f"the subagent's Read sits under the Agent step (children: {children})")
 
 sys.exit(1 if failures else 0)

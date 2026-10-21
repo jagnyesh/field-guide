@@ -1,8 +1,8 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import { debugLine } from '../lib/metadata'
-import { buildTimeline } from '../lib/transcript'
-import type { TranscriptMessage, Turn } from '../lib/transcript'
+import { buildTimeline, startedAgents } from '../lib/transcript'
+import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 
 const TRACE = 'field-guide-trace'
 
@@ -10,10 +10,29 @@ const TRACE = 'field-guide-trace'
 // and after every main-loop turn, so nothing here needs to survive a reload (ADR 0002).
 let timeline: Turn[] = []
 
+async function readRows($: EngineInterface, agentId?: string): Promise<TranscriptMessage[] | undefined> {
+  const rows = agentId ? await $.session.messages({ agentId }) : await $.session.messages()
+  return Array.isArray(rows) ? (rows as TranscriptMessage[]) : undefined
+}
+
 async function rebuild($: EngineInterface): Promise<void> {
-  const rows = await $.session.messages()
-  timeline = Array.isArray(rows) ? buildTimeline(rows as TranscriptMessage[]) : []
+  const main = (await readRows($)) ?? []
+  // Subagents can start subagents, so follow Agent steps until no new id turns up.
+  const subagents = new Map<string, TranscriptMessage[]>()
+  const pending = startedAgents(main)
+  while (pending.length > 0) {
+    const agentId = pending.shift() as string
+    if (subagents.has(agentId)) continue
+    const rows = (await readRows($, agentId)) ?? []
+    subagents.set(agentId, rows)
+    pending.push(...startedAgents(rows))
+  }
+  timeline = buildTimeline(main, agentId => subagents.get(agentId))
   $.ui.invalidate('ui.render')
+}
+
+function stepLine(step: Step): string {
+  return `${step.isError ? '✗ ' : ''}${step.kind.padEnd(8)} ${step.tool}  ${step.summary}`.trimEnd()
 }
 
 async function logDebug($: EngineInterface): Promise<void> {
@@ -45,12 +64,12 @@ export const register: Register = on => {
     return result
   })
 
+  // A subagent can finish after the main loop stops, so its own turn end rebuilds too.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    if (e.agentId) return result
     try {
       await rebuild($)
-      await logDebug($)
+      if (!e.agentId) await logDebug($)
     } catch (err) {
       fail($, 'turn.complete', err)
     }
@@ -75,11 +94,16 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text bold>Turn {turn.index + 1}</Text>
-        {turn.steps.map(step => (
+        {turn.steps.flatMap(step => [
           <Text key={step.id} color={step.isError ? 'red' : undefined}>
-            {step.tool}  {step.summary}
-          </Text>
-        ))}
+            {stepLine(step)}
+          </Text>,
+          ...(step.children ?? []).map(child => (
+            <Text key={child.id} dimColor color={child.isError ? 'red' : undefined}>
+              {`  ↳ ${step.agentType} › ${stepLine(child)}`}
+            </Text>
+          )),
+        ])}
       </Box>
     )
   })

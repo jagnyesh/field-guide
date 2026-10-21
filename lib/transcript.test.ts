@@ -55,4 +55,42 @@ describe('Transcript Reader', () => {
     expect(turn.steps[0].summary.length).toBeLessThanOrEqual(80)
     expect(turn.steps[0].summary.endsWith('…')).toBe(true)
   })
+
+  test('each step carries its kind', async () => {
+    const [turn] = buildTimeline([prompt('go'), reply('', [use('r', 'Read', { file_path: 'a' }), use('b', 'Bash', { command: 'pytest' })])])
+    expect(turn.steps.map(s => s.kind)).toEqual(['read', 'verify'])
+  })
+
+  test("a subagent's steps sit under the Agent step that started it, labelled with the subagent", async () => {
+    const subagents: Record<string, TranscriptMessage[]> = {
+      a1: [
+        { role: 'user', text: 'Read c.txt and reply with its first word.' },
+        reply('', [use('s1', 'Read', { file_path: 'c.txt' }), use('s2', 'SubagentHandback', {})]),
+      ],
+    }
+    const [turn] = buildTimeline(
+      [prompt('go'), reply('', [{ ...use('a', 'Agent', { description: 'Read c', subagent_type: 'Explore' }), agentId: 'a1' }])],
+      agentId => subagents[agentId],
+    )
+    expect(turn.steps.length).toBe(1)
+    const agent = turn.steps[0]
+    expect(agent.kind).toBe('delegate')
+    expect(agent.children?.map(s => [s.tool, s.agentId])).toEqual([['Read', 'a1'], ['SubagentHandback', 'a1']])
+  })
+
+  test("a subagent's hand-back and the main-loop turn it starts stay in the Settled turn that started the subagent", async () => {
+    // The row shapes seen in a live session: the Agent call returns at once, the main loop stops,
+    // and the subagent's hand-back arrives later as a task notification that starts a new main-loop turn.
+    const turns = buildTimeline([
+      prompt('Use the Agent tool with subagent_type Explore'),
+      reply('', [{ ...use('a', 'Agent', { description: 'Read a' }), agentId: 'a8' }]),
+      { role: 'user', text: '', toolResults: [{ tool_use_id: 'a' }] },
+      reply('The subagent is still running.'),
+      { role: 'user', text: '<task-notification>\n<task-id>a8</task-id>\n<tool-use-id>a</tool-use-id>' },
+      reply('', [use('r', 'Read', { file_path: 'a.txt' })]),
+      reply('done'),
+    ])
+    expect(turns.length).toBe(1)
+    expect(turns[0].steps.map(s => s.id)).toEqual(['a', 'r'])
+  })
 })
