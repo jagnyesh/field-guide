@@ -89,6 +89,25 @@ if scenario == "boundary-mock":
     levels = {finding["kind"]: finding["level"] for finding in last.get("findings", [])}
     check(levels.get("boundary-mock") == "note", f"mocking urllib in a test is a Boundary mock note by default ({levels})")
 
+def last_line_of(path):
+    lines = [line[line.index(PREFIX) + len("field-guide: "):] for line in open(path, errors="replace") if PREFIX in line]
+    return json.loads(lines[-1]) if lines else None
+
+
+if scenario == "continuity":
+    folder = os.path.dirname(log)
+    before, after = last_line_of(os.path.join(folder, "debug-1.log")), last_line_of(os.path.join(folder, "debug-2.log"))
+    check(before is not None and after is not None, "both processes wrote debug lines")
+    before, after = before or {"turns": [{"steps": []}], "baseline": {}}, after or {"turns": [{"steps": []}], "baseline": {}, "readingLists": []}
+    check(before["baseline"] == after["baseline"] and before["baseline"].get("pytest"), f"the baseline is the same after the resume ({after['baseline']})")
+    runs_of = lambda line: [step["run"] for step in line["turns"][0]["steps"] if "run" in step]
+    check(runs_of(before) == runs_of(after) and runs_of(before), "turn 1's test runs are the same after the resume")
+    shell_of = lambda line: [step.get("shellEdit", {}).get("exact") for step in line["turns"][0]["steps"] if "shellEdit" in step]
+    check(shell_of(before) == [True] and shell_of(after) == [False], f"turn 1's shell edit is exact before the resume and a best guess after ({shell_of(before)} → {shell_of(after)})")
+    lists = {entry["file"]: entry["reads"] for entry in after.get("readingLists", [])}
+    reads = next((r for f, r in lists.items() if f.endswith("src/settings.ini")), [])
+    check(any(r["path"].endswith("a.txt") for r in reads), f"a read from before the resume is still on the Reading List ({[r['path'].split('/')[-1] for r in reads]})")
+
 if scenario in ("subagent", "subagent-resume"):
     first = last["turns"][0]["steps"] if last["turns"] else []
     agent = next((step for step in first if step["tool"] in ("Agent", "Task")), None)

@@ -540,5 +540,27 @@ describe('Loop Trace pane', () => {
     expect(await band.find({ type: 'Text', text: /⚑ Boundary mock/ })).toBeDefined()
     await band.unmount()
   })
+
+  test('the session start a hot reload raises keeps what the Live Probe saw: it lives in the host state', async ($, on) => {
+    let callId = ''
+    const rows = () => [
+      { role: 'user', text: 'shorten the window', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: callId, tool: 'Bash', input: { command: 'python tools/rewrite.py' }, text: '' }] },
+    ]
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    standIn(on, rows, { status: ' M src/settings.ini\0', mtimes: { 'src/settings.ini': 5_000 } })
+    on('tool.call', (_, e) => {
+      callId = e.tool_use_id
+      return { result: { stdout: '', stderr: '', interrupted: false }, text: '' }
+    })
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'python tools/rewrite.py', description: 'rewrite' })
+    await clock.settle()
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /via shell, exact: src\/settings\.ini/ })).toBeDefined()
+    await ui.unmount()
+  })
 })
 

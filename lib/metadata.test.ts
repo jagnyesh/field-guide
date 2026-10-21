@@ -138,5 +138,17 @@ describe('Metadata-only rule: the debug line', () => {
     expect(line.readingLists[0].reads).toEqual([{ path: 'a.txt', compaction: 're-attached' }, { path: 'b.txt', compaction: 'read before' }])
     expect(line.compactions).toEqual([{ trigger: 'manual', kept: 1, summarised: 5 }])
   })
+
+  test("carries each runner's baseline as its already-failing ids, without parameters", async () => {
+    const turns = buildTimeline([
+      { role: 'user', text: 'go' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'p', tool: 'Bash', input: { command: 'pytest -q' }, text: OUTPUT['param-fail'] }] },
+    ])
+    const line = debugLine(turns)
+    expect(JSON.parse(line).baseline).toEqual({
+      pytest: ['tests/test_legacy.py::test_legacy_format', 'tests/test_lookup.py::test_lookup[…]', 'tests/test_ratelimit.py::test_over_limit'],
+    })
+    expect(line).not.toContain(MARKER)
+  })
 })
 

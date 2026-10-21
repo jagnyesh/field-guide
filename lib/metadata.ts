@@ -1,4 +1,5 @@
 import type { CompactionRecord } from './compaction'
+import { alreadyFailing } from './flags'
 import type { Finding } from './flags'
 import type { ReadingList } from './readinglist'
 import type { TestRun } from './testrun'
@@ -66,6 +67,7 @@ export function debugLine(
     turns: turns.map(turn => ({ index: turn.index, verification: verificationOf(turn), steps: turn.steps.map(stepMetadata) })),
     findings: findings.map(({ kind, level }) => ({ kind, level })),
     readingLists: lists.map(listMetadata),
+    baseline: Object.fromEntries([...alreadyFailing(turns)].map(([runner, ids]) => [runner, [...ids].map(stripParams)])),
     // Token counts stay out: the engine's debug log redacts fields named for tokens, breaking the line.
     compactions: compactions.map(({ trigger, kept, summarised }) => ({ trigger, kept, summarised })),
   })
