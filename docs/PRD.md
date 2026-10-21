@@ -41,12 +41,12 @@ A **Flag** is raised in a one-line band above the prompt, shown as a toast at th
 11. As a new developer, I want a timeline of the turn's tool calls, so that I can follow the agent without scrolling the transcript.
 12. As a new developer, I want each step labelled as read, search, edit, edit (via shell), run, verify, or delegate, so that I see the shape of the agent loop.
 13. As a new developer, I want failed tool calls marked, so that I can see where the agent hit an error and how it recovered.
-14. As a new developer, I want subagent work grouped under the turn that started it and labelled with the subagent, so that delegated work isn't mistaken for the main loop.
+14. As a new developer, I want subagent work grouped under the turn that started it, even when it finishes after the main loop stops, and labelled with the subagent, so that delegated work isn't mistaken for the main loop.
 15. As a new developer, I want shell edits marked as missing from the diff views, so that I know to look for them.
 16. As a new developer, I want each shell edit labelled exact or best guess, so that I know how far to trust it.
 17. As a new developer, I want my own editor changes made during an agent command not credited to the agent, so that the timeline is accurate.
 18. As a new developer, I want a Reading List for each edited file, so that I know which files to read to understand the change.
-19. As a new developer, I want files read in earlier turns included until a compaction folds them away, so that the list reflects what the agent actually had in hand.
+19. As a new developer, I want files read in earlier turns included, and those read before a compaction marked as such rather than dropped, so that the list never loses a file the engine may have re-attached.
 20. As a new developer, I want files read by subagents shown under that subagent, so that I know the main loop saw only a summary of them.
 21. As a new developer, I want searches shown as their query rather than every match, so that the list stays short.
 22. As a new developer, I want files read through shell commands included, so that the list doesn't miss reads made outside the read tool.
@@ -78,7 +78,7 @@ A **Flag** is raised in a one-line band above the prompt, shown as a toast at th
 
 **Band, flags, and notes**
 44. As a new developer, I want one line above the prompt with the most important fact, so that I stay informed without opening views.
-45. As a new developer, I want turn-level flags judged only when the turn ends, so that I'm not shown a flag that is only true halfway through.
+45. As a new developer, I want turn-level flags judged only when the turn settles (the main loop has stopped and every subagent it started has handed back), so that I'm not shown a flag that is only true halfway through.
 46. As a new developer, I want a flag at the end of a turn to also show as a toast and stay until I've seen it, so that I don't miss it while reading the agent's reply.
 47. As a new developer, I want each flag to say in one sentence why it fired, so that I learn the principle.
 48. As a new developer, I want flags kept from the model, so that the agent can't learn to avoid the detector, for example by not running tests.
@@ -113,28 +113,30 @@ A **Flag** is raised in a one-line band above the prompt, shown as a toast at th
 - **Metadata-only rule** across the mod, its state, the debug log, toasts, the status line, and handed-off prompts.
 
 **Modules**
-1. **Transcript Reader** (pure, deep): transcript messages in (main loop plus each subagent's), timeline out: steps with tool, short input summary, error state, agent, turn, and order. The source of truth for reads, searches, edits through the edit tools, and test runs. It is rebuilt at session start (which covers resume and hot reload) and updated after each turn.
+1. **Transcript Reader** (pure, deep): transcript messages in (main loop plus each subagent's), timeline out: steps with tool, short input summary, error state, agent, turn, and order. Subagents are found from the Agent tool uses in the transcript, each of which carries the subagent's id, not from the session's agent list, which is empty after a resume. Steps are grouped into **Settled turns**. The source of truth for reads, searches, edits through the edit tools, and test runs. It is rebuilt at session start (which covers resume and hot reload) and updated after each turn.
 2. **Live Probe** (thin, stateful): records only what the transcript lacks: the engine's read-only flag per call, each shell call's start and end time, and change-list snapshots taken after each shell call that wasn't read-only. Snapshots don't take the repository's index lock and give up after a time limit. A changed file is credited to a shell call only if its modification time falls inside that call. Outside a repository, or after a time-out, edits come from the command text and are labelled best guess. After a resume, earlier shell edits are best guess.
-3. **Step Classifier** (pure): step kind per timeline entry. Verify has two strengths: Tested (test runner) and Checked (linter, type checker, build). A read-only shell command that names files is a read. An ad-hoc import or script is a run.
+3. **Step Classifier** (pure): step kind per timeline entry. Verify has two strengths: Tested (test runner) and Checked (linter, type checker, build). A read-only shell command that names files is a read. An ad-hoc import or script is a run. A subagent's hand-back step is delegate.
 4. **Test Output Parser** (pure): runner and output text in, counts and failing test ids out, or unknown. v1 supports pytest, vitest, and jest. Ids are kept whole for the pane, and a stripped form without parameters is produced for every other use.
-5. **Reading List Builder** (pure): timeline plus compaction records in, Reading List per edited file out, following the boundaries in CONTEXT.md.
-6. **Loop Flags** (pure): timeline, parsed runs, and baseline in; flags and notes out, each with its kind, the steps that set it off, and a one-sentence reason. Judged at turn end only. v1: Unverified edit, Ended red, Red step, Test changed to pass (flags); Boundary mock (a note, or a flag where the project turns it on); "test and source both changed before it passed" (note). The earlier "Shell edit" flag and "edit without read" flag are dropped. Shell edits are a step label, and the edit tools already require a read.
+5. **Reading List Builder** (pure): timeline plus compaction records in, Reading List per edited file out, following the boundaries in CONTEXT.md. Reads from before a compaction are marked, not dropped.
+6. **Loop Flags** (pure): timeline, parsed runs, and baseline in; flags and notes out, each with its kind, the steps that set it off, and a one-sentence reason. Judged only when the turn settles. v1: Unverified edit, Ended red, Red step, Test changed to pass (flags); Boundary mock (a note, or a flag where the project turns it on); "test and source both changed before it passed" (note). The earlier "Shell edit" flag and "edit without read" flag are dropped. Shell edits are a step label, and the edit tools already require a read.
 7. **Context Ledger** (pure aggregation): fixed load from the system-prompt sections, memory provenance from the engine's instruction-file lookup, measured turn growth from session usage readings, and per-message estimates from text length, with an unattributed remainder. Breakdowns use the free local estimate; the exact breakdown runs only on an explicit action.
-8. **Compaction Diff** (pure): input and output messages of each compaction in; trigger, tokens before and after, kept-whole versus summarised counts, and the summary message out. It feeds the Reading List Builder.
-9. **Surface layer** (thin): band, four panes, one slash command with view names, hotkeys active only while the band has focus, toast at turn end, status-line fallback. The band has no buttons. It passes to whatever is drawn beneath it and gives way whenever anything shows there or a survey holds the band. While a turn runs it shows only live facts.
+8. **Compaction Diff** (pure): input and output messages of each compaction in; trigger, tokens before and after, kept-whole versus summarised counts, and the summary message out. A message was kept word for word only if its handle appears among the input's handles; the summary arrives with a new handle. Files the engine re-attaches after compacting are in neither list. It feeds the Reading List Builder.
+9. **Surface layer** (thin): band, four panes, one slash command with view names, hotkeys active only while the band has focus, toast when the turn settles, status-line fallback. The band has no buttons. It passes to whatever is drawn beneath it and gives way whenever the result is anything other than the engine's own node, or a survey holds the band. Until the turn settles it shows only live facts.
 
 **Configuration**
 - Boundary module patterns, with defaults for common Python and JavaScript database, HTTP, and cloud SDK libraries.
 - Boundary mock as a flag (off by default).
 - A debug environment variable that writes one JSON line per judged turn to the debug log: metadata only, test ids without parameters, no search queries.
 
-**API facts relied on (checked against the mod API types of Claude Code 2.1.303, not run)**
+**API facts relied on (Claude Code 2.1.303: checked against the type declarations; those marked *Live* also in a live session)**
 - A tool-call result includes the output exactly as the model reads it.
-- The transcript lists each assistant message's tool uses with their outcome and result text. A subagent's transcript is read by its agent id.
+- The transcript lists each assistant message's tool uses with their outcome and result text. A subagent's transcript is read by its agent id. *Live:* complete after a resume; the Agent tool use carries the subagent's id; the session's agent list is empty after a resume.
 - Session usage returns exact context figures. The `summary` breakdown is a free local estimate, and `full` sends token-count requests. The `session.measure` event never carries a breakdown.
-- `session.compact` gives the transcript before compaction with engine handles, and its result gives the transcript after, plus token counts where the engine recorded them.
+- `session.compact` gives the transcript before compaction with engine handles, and its result gives the transcript after, plus token counts where the engine recorded them. *Live:* the summary message has a new handle, kept messages keep their input handles, and files re-attached after compacting appear in neither.
 - The instruction-file lookup returns each file and its imported parts, with paths.
-- The band is one instance: a hook draws a tree or passes, and must give way while a survey holds it.
+- The band is one instance: a hook draws a tree or passes, and must give way while a survey holds it. *Live:* passing returns the engine's own node (type `engine`) when nothing is drawn beneath, or else the tree drawn beneath, which names its plugin.
+- *Live:* hooks fire in a non-interactive session with the plugin folder loaded, in the same order as in an interactive one.
+- *Live:* the Agent tool runs subagents in the background. The main loop's turn completes before the subagent finishes, and the hand-back starts a new main-loop turn. In an interactive session the subagent's last step is a hand-back tool call that is not marked read-only.
 
 ## Testing Decisions
 
@@ -166,9 +168,9 @@ A **Flag** is raised in a one-line band above the prompt, shown as a toast at th
 
 - **Home:** this repository, which is also its own marketplace, Apache-2.0. No personal paths or private project names go in it.
 - **Mapping to the playbook:** Loop Trace serves Build, the Ledger serves Test, and X-ray and Compaction Autopsy serve Maintain (the agent's own working state). It is the in-tool counterpart of the stations The Merge Works machine draws.
-- **To check first in a live session (inferred, not yet run):**
-  1. A non-interactive session with the plugin folder loaded fires hooks as an interactive one does.
-  2. The transcript includes every tool use and its result text after a resume, and subagent transcripts are still readable then.
-  3. A band hook can tell from what the next hook returns whether anything is drawn beneath it. If not, the fallback is to draw only while a flag is raised and always give way during a survey.
-  4. Change-list snapshots without the index lock stay fast enough on a large repository.
-- **Requirements:** mods load by default from Claude Code 2.1.287. The API facts above were checked against the 2.1.303 type declarations only.
+- **Checked in a live session** (Claude Code 2.1.303, Haiku, one run each): hooks fire headless as they do interactively; the transcript is complete after a resume; a band hook can see whether anything is drawn beneath it; change-list snapshots without the index lock take about 0.3 s on a 200,000-file repository and caused no lock failures in a concurrent `git add` loop, where plain status caused 164 of 400.
+- **Still open:**
+  1. Whether the `prompt.attachment` event reports the files the engine re-attaches after a compaction. If it does, the Reading List can show them as re-attached instead of only marking reads from before the compaction.
+  2. Plugin order: in the one ordering tried, the first plugin folder named was the outermost.
+  3. Snapshot time with a cold file-system cache, and on repositories above a million files.
+- **Requirements:** mods load by default from Claude Code 2.1.287. The API facts above were checked against the 2.1.303 type declarations, and those marked *Live* in a live session.

@@ -16,9 +16,13 @@ _Avoid_: under the hood (ambiguous), internals
 What the system being worked on is: its structure, where a change lands, and who owns it. Derived from the repository, so usually approximate. Deferred to after agent mechanics.
 _Avoid_: orientation, onboarding (too broad)
 
+**Settled turn**:
+Everything from one developer prompt until the main loop has stopped and every subagent it started has handed back, including the main-loop turns the engine starts to take those hand-backs. Subagents run in the background, so the main loop can stop before they finish.
+_Avoid_: turn (when the engine's single main-loop turn is not what is meant)
+
 **Reading List**:
 For one edited file, the files the agent read earlier in the session before making that edit, in first-read order. Part of Loop Trace. The one piece of codebase understanding in v1, because it comes from the agent's own actions and is exact.
-- A file read in an earlier turn counts, unless a compaction has since folded away the message that carried it.
+- A file read in an earlier turn counts. A file read before a compaction stays on the list, marked "read before compaction": the engine may re-attach recently read files after compacting, and those re-attachments do not appear in the transcript.
 - A file read by a subagent counts, shown under that subagent: the main loop saw only the subagent's summary.
 - A search counts as its query, not as the files it matched.
 - A file shown by a read-only shell command counts as a read.
@@ -34,7 +38,7 @@ The measured change in context tokens from one main-loop turn to the next (exact
 The part of **Turn growth** that the per-message estimates do not cover: system reminders, formatting, and thinking. Shown as its own row and never scaled away.
 
 **Flag**:
-A finding that is raised in the band above the prompt and ranked against other flags. Kept for findings precise enough that a developer should stop and look. Shown to the developer only, never to the model: the agent must not be able to optimise against the detector. A flag raised at the end of a turn also shows as a toast, and stays in the band until it is **Acknowledged**. The developer can choose to hand it to the agent as their own visible prompt.
+A finding that is raised in the band above the prompt and ranked against other flags. Kept for findings precise enough that a developer should stop and look. Shown to the developer only, never to the model: the agent must not be able to optimise against the detector. A flag raised when a **Settled turn** ends also shows as a toast, and stays in the band until it is **Acknowledged**. The developer can choose to hand it to the agent as their own visible prompt.
 
 **Acknowledged**:
 A flag the developer has seen: they opened its view or sent their next prompt.
@@ -55,7 +59,7 @@ The two strengths of verification for an edit. **Tested**: a test runner ran aft
 _Avoid_: verified (without saying which strength), validated
 
 **Unverified edit**:
-A turn that edits files and is neither **Tested** nor **Checked** after the last edit.
+A **Settled turn** that edits files and is neither **Tested** nor **Checked** after the last edit.
 
 **Baseline run**:
 The session's first run of a given test runner, if it came before any source edit in the session. Its failures are **Already failing**. If the first run came after an edit, there is no baseline for that runner.
@@ -64,11 +68,11 @@ The session's first run of a given test runner, if it came before any source edi
 A test that failed in the **Baseline run**. Shown, but never raises **Ended red**.
 
 **Ended red**:
-A turn whose last test run has at least one failing test that is not **Already failing**. Compared by test id where the output gives ids, otherwise by counts (and labelled as such). Not raised for a turn the developer interrupted, or one whose last run gave no readable result. A fact about the run, not a claim about what the agent said.
+A **Settled turn** whose last test run has at least one failing test that is not **Already failing**. Compared by test id where the output gives ids, otherwise by counts (and labelled as such). Not raised for a turn the developer interrupted, or one whose last run gave no readable result. A fact about the run, not a claim about what the agent said.
 _Avoid_: false success, lied
 
 **Red step**:
-A turn that ends with failures only in test files it added or edited, and no source edits. The deliberate first step of test-driven development; shown neutrally, not as **Ended red**.
+A **Settled turn** that ends with failures only in test files it added or edited, and no source edits. The deliberate first step of test-driven development; shown neutrally, not as **Ended red**.
 
 **Test changed to pass**:
 A test id that failed and then passed, where every edit between the two runs was to test files: an assertion changed or removed, or a skip, expected-failure, or run-only marker added. A marker always counts. When source files also changed in between, it is a note, not this flag. Matched by test file, not by test function. A fact about the edits, not a judgement of whether the test was wrong.
@@ -81,7 +85,7 @@ _Avoid_: redaction (nothing is detected or removed; content is never copied)
 ## Relationships
 
 - A **New developer** learns **Agent mechanics** first, then **Codebase understanding**.
-- Turn-level **Flags** are judged only when a turn completes; while it runs, only live facts show.
+- Turn-level **Flags** are judged only when a **Settled turn** ends; until then, only live facts show.
 - Field Guide always gives way in the band to anything else drawn there; a **Flag** it cannot show there goes to the status line.
 - Each edited file in a turn has one **Reading List**; the **Reading List** bridges **Agent mechanics** and **Codebase understanding**.
 

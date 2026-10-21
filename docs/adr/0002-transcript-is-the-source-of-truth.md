@@ -9,4 +9,5 @@ Unlike the example mods, which record tool calls as they happen, Field Guide reb
 ## Consequences
 
 - The rebuild is a pure function from transcript to timeline, so most of the logic is tested on fixtures without a host.
-- The design depends on the transcript holding every tool use's result text after a resume, including subagent transcripts. This is to be checked first in a live session; if it doesn't hold, this ADR needs revisiting.
+- Checked live on Claude Code 2.1.303: the transcript holds every tool use's result text after a resume, and a subagent's transcript is readable by the id on its Agent tool use. The session's agent list is empty after a resume, so subagents are found from the transcript, not from that list.
+- Files the engine re-attaches after a compaction are not in the transcript, so the Reading List marks reads from before a compaction instead of dropping them.
