@@ -1,7 +1,8 @@
 // The context's Fixed load: what every request pays before the conversation (CONTEXT.md).
 
 type Category = { readonly name: string; readonly tokens: number; readonly kind: string }
-type McpTool = { readonly serverName: string; readonly tokens: number }
+type McpTool = { readonly serverName: string; readonly tokens: number; readonly isLoaded: boolean }
+type McpServer = { readonly server: string; readonly tokens: number; readonly tools: number }
 
 export type BreakdownInput = {
   readonly categories: readonly Category[]
@@ -22,7 +23,9 @@ export type MemoryFile = {
 export type FixedLoad = {
   readonly categories: readonly { readonly name: string; readonly tokens: number }[]
   readonly total: number
-  readonly mcpServers: readonly { readonly server: string; readonly tokens: number; readonly tools: number }[]
+  readonly mcpServers: readonly McpServer[]
+  // Schemas the engine loads on demand (ToolSearch): only their names are paid until one is searched for.
+  readonly mcpDeferred: readonly McpServer[]
   readonly memory: readonly MemoryFile[]
   readonly sections: readonly { readonly name: string; readonly approxTokens: number }[]
 }
@@ -47,16 +50,13 @@ export function fixedLoad({ breakdown, ancestors = [], sections = [] }: FixedLoa
     .filter(c => c.kind === 'used' && !CONVERSATION.test(c.name))
     .map(({ name, tokens }) => ({ name, tokens }))
     .sort((a, b) => b.tokens - a.tokens)
-  const servers = new Map<string, { tokens: number; tools: number }>()
-  for (const tool of breakdown.mcpTools ?? []) {
-    const server = servers.get(tool.serverName) ?? { tokens: 0, tools: 0 }
-    servers.set(tool.serverName, { tokens: server.tokens + tool.tokens, tools: server.tools + 1 })
-  }
+  const tools = breakdown.mcpTools ?? []
   const imported = new Map(ancestors.map(a => [`${a.dir}/${a.name}`, a.parts.slice(1)]))
   return {
     categories,
     total: categories.reduce((sum, c) => sum + c.tokens, 0),
-    mcpServers: [...servers].map(([server, s]) => ({ server, ...s })).sort((a, b) => b.tokens - a.tokens),
+    mcpServers: byServer(tools.filter(t => t.isLoaded)),
+    mcpDeferred: byServer(tools.filter(t => !t.isLoaded)),
     memory: (breakdown.memoryFiles ?? []).map(file => ({
       path: file.path,
       type: file.type,
@@ -68,4 +68,13 @@ export function fixedLoad({ breakdown, ancestors = [], sections = [] }: FixedLoa
       .map(section => ({ name: section.name, approxTokens: approxTokens(section.chars) }))
       .sort((a, b) => b.approxTokens - a.approxTokens),
   }
+}
+
+function byServer(tools: readonly McpTool[]): McpServer[] {
+  const servers = new Map<string, { tokens: number; tools: number }>()
+  for (const tool of tools) {
+    const server = servers.get(tool.serverName) ?? { tokens: 0, tools: 0 }
+    servers.set(tool.serverName, { tokens: server.tokens + tool.tokens, tools: server.tools + 1 })
+  }
+  return [...servers].map(([server, s]) => ({ server, ...s })).sort((a, b) => b.tokens - a.tokens)
 }
