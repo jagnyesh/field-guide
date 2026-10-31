@@ -63,6 +63,17 @@ export function commandVerification(command: string): Verification | null {
   return found.includes('tested') ? 'tested' : found.includes('checked') ? 'checked' : null
 }
 
+// The first git commit or push in a command line, read past git's own options (`git -C repo push`).
+export function gitPublish(command: string): 'commit' | 'push' | null {
+  for (const { argv } of segments(command)) {
+    if (argv.length === 0 || basename(argv[0]) !== 'git') continue
+    let i = 1
+    while (argv[i]?.startsWith('-')) i += argv[i] === '-C' || argv[i] === '-c' ? 2 : 1
+    if (argv[i] === 'commit' || argv[i] === 'push') return argv[i] as 'commit' | 'push'
+  }
+  return null
+}
+
 function segmentKind(segment: Segment): StepKind | null {
   if (segment.writesFile) return 'run'
   const argv = segment.argv

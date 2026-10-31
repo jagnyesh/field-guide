@@ -33,12 +33,12 @@ cd /tmp/fg-review && claude              # the installed plugin loads by itself
 ```
 
 1. Ask: *Run .venv/bin/python -m pytest -q.* This first run is the session's baseline: its 2 failures are marked already failing, and the band shows live facts, `Field Guide · pytest 3 passed, 2 failed · context N%`.
-2. Ask: *Change window_seconds in src/settings.ini from 60 to 30. Do not run the tests.* The band shows `⚑ Unverified edit · Turn 2 · /guide trace`, and a toast says why.
+2. Ask: *Change window_seconds in src/settings.ini from 60 to 30. Do not run the tests.* The band shows `⚑ No test or check ran since the last edit · Turn 2 · /guide trace`, and a toast names the flag, Unverified edit, and says why.
 3. Ask: *Run .venv/bin/python -m pytest -q.* The edit is now tested and the same 2 tests were already failing, so there's no flag: the band shows live facts again, `Field Guide · pytest 3 passed, 2 failed · context N%`.
 4. Type `/guide trace` for the turn's steps, whether it was verified, any flag with **Tell Claude**, and the Reading List; then `/guide ledger` for each run's counts with the already-failing tests marked. Views you open stay as tabs in the pane.
 5. Narrow the terminal to about 80 columns: the band truncates to fit, and panes open inline when you ask for them.
 
-Skip step 1 and edit first, and step 3 shows `⚑ Ended red` instead: with no baseline, Field Guide can't tell new failures from old ones, and says so.
+Skip step 1 and edit first, and step 3 shows `⚑ Failures in the last test run, no baseline` (Ended red) instead: with no baseline, Field Guide can't tell new failures from old ones, and says so.
 
 If your settings deny the Read tool, as some lean-ctx setups do, Claude can't use Edit: add *use ctx_patch if the Edit tool is blocked* to step 2. Field Guide reads lean-ctx's `ctx_shell`, `ctx_read`, `ctx_patch`, and `ctx_search` like the built-in tools.
 
@@ -51,16 +51,16 @@ If your settings deny the Read tool, as some lean-ctx setups do, Claude can't us
 | Context X-ray | `/guide xray` | The fixed load every request pays (system prompt, tools, MCP servers, memory files and what they import, system-prompt sections), the last turn's measured growth split across its messages, and what the estimates leave over. |
 | Compaction Autopsy | `/guide autopsy` | Each compaction's trigger, tokens before and after, how many messages were kept word for word, and the latest summary. |
 
-One line above the prompt shows a flag once a turn has settled, otherwise the last test result and how full the context is. It gives way to anything else drawn there (another mod, a survey) and moves a flag to the status line instead. A flag at the end of a turn also shows as a toast. Each flag's view has a **Tell Claude** button that fills an editable prompt; nothing is sent until you send it.
+One line above the prompt shows a flag once a turn has settled, stated as what happened, otherwise the last test result and how full the context is. It gives way to anything else drawn there (another mod, a survey) and moves a flag to the status line instead. A flag at the end of a turn also shows as a toast. Each flag's view has a **Tell Claude** button that fills an editable prompt; nothing is sent until you send it. The prompt reports the flag as information, not a request to change approach, since a flag can't tell whether what happened was intended.
 
 ### Flags and notes
 
 | Finding | Kind | When |
 |---|---|---|
-| Unverified edit | flag | A turn edited files and no test, lint, type check, or build ran after the last edit. |
+| Unverified edit | flag | A turn edited files and no test, lint, type check, or build ran after the last edit. A failing run counts. The same check toasts mid-turn when Claude starts a `git commit` or `git push`. |
 | Ended red | flag | The turn's last test run has a failing test that wasn't already failing at the session's first run. |
 | Test changed to pass | flag | A test failed and then passed with only its own test file edited in between, or with a skip, expected-failure, or run-only marker added. |
-| Red step | note | The new failures are all in tests the turn wrote, and no source file changed (test-first). |
+| Red step | note | The new failures are all in tests written since the last source edit, and the turn changed no source file (test-first). |
 | Test and source both changed | note | A test passed after both it and the source changed. |
 | Boundary mock | note, or flag if enabled | A test now mocks a database, HTTP client, or SDK. |
 
@@ -83,7 +83,7 @@ Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on
 
 | Checked | Behaviours |
 |---|---|
-| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass, Boundary mock; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
+| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass, Boundary mock; the mid-turn check at `git commit`; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
 | Live, interactive (tmux at 80 and 144 columns) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
 | Stand-in host only (`claude plugin test`) | Rendering of every pane and the band, giving way in the band, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
 

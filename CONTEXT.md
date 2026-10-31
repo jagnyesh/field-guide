@@ -38,7 +38,7 @@ The measured change in context tokens from one main-loop turn to the next (exact
 The part of **Turn growth** that the per-message estimates do not cover: system reminders, formatting, and thinking. Shown as its own row and never scaled away.
 
 **Flag**:
-A finding that is raised in the band above the prompt and ranked against other flags. Kept for findings precise enough that a developer should stop and look. Shown to the developer only, never to the model: the agent must not be able to optimise against the detector. A flag raised when a **Settled turn** ends also shows as a toast, and stays in the band until it is **Acknowledged**. The developer can choose to hand it to the agent as their own visible prompt.
+A finding that is raised in the band above the prompt and ranked against other flags. Kept for findings precise enough that a developer should stop and look. Shown to the developer only, never to the model: the agent must not be able to optimise against the detector. A flag raised when a **Settled turn** ends also shows as a toast, and stays in the band until it is **Acknowledged**. The developer can choose to hand it to the agent as their own visible prompt. A flag states what happened, not whether it was intended: the band shows the fact, and the hand-off tells the agent it is information, not a request to change approach. A new developer tends to pass a flag on as "fix this", and the agent may then bend a deliberately failing test to green.
 
 **Acknowledged**:
 A flag the developer has seen: they opened its view or sent their next prompt.
@@ -59,7 +59,7 @@ The two strengths of verification for an edit. **Tested**: a test runner ran aft
 _Avoid_: verified (without saying which strength), validated
 
 **Unverified edit**:
-A **Settled turn** that edits files and is neither **Tested** nor **Checked** after the last edit.
+A **Settled turn** that edits files and is neither **Tested** nor **Checked** after the last edit. A failing run counts: verification is that a check ran, not that it passed. The same check runs when the agent starts a `git commit` or `git push`: if nothing tested or checked the session's last edit, a toast says so, mid-turn.
 
 **Baseline run**:
 The session's first run of a given test runner, if it came before any source edit in the session. Its failures are **Already failing**. If the first run came after an edit, there is no baseline for that runner.
@@ -72,7 +72,7 @@ A **Settled turn** whose last test run has at least one failing test that is not
 _Avoid_: false success, lied
 
 **Red step**:
-A **Settled turn** that ends with failures only in test files it added or edited, and no source edits. The deliberate first step of test-driven development; shown neutrally, not as **Ended red**.
+A **Settled turn** that ends with failures only in test files added or edited since the session's last source edit, and that made no source edit itself. The failures can come from a test written in an earlier turn. The deliberate first step of test-driven development; shown neutrally, not as **Ended red**.
 
 **Test changed to pass**:
 A test id that failed and then passed, where every edit between the two runs was to test files: an assertion changed or removed, or a skip, expected-failure, or run-only marker added. A marker always counts. When source files also changed in between, it is a note, not this flag. Matched by test file, not by test function. A fact about the edits, not a judgement of whether the test was wrong.
@@ -85,7 +85,7 @@ _Avoid_: redaction (nothing is detected or removed; content is never copied)
 ## Relationships
 
 - A **New developer** learns **Agent mechanics** first, then **Codebase understanding**.
-- Turn-level **Flags** are judged only when a **Settled turn** ends; until then, only live facts show.
+- Turn-level **Flags** are judged only when a **Settled turn** ends; until then, only live facts show. The one mid-turn check is the toast at a `git commit` or `git push`, which raises no flag.
 - Field Guide always gives way in the band to anything else drawn there; a **Flag** it cannot show there goes to the status line.
 - Each edited file in a turn has one **Reading List**; the **Reading List** bridges **Agent mechanics** and **Codebase understanding**.
 

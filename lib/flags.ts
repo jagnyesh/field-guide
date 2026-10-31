@@ -17,6 +17,8 @@ export type Finding = {
   readonly kind: FindingKind
   readonly level: 'flag' | 'note'
   readonly title: string
+  // What happened, for the band: information a developer can pass on without it reading as a fix to make.
+  readonly fact: string
   // The view that explains it; opening that view acknowledges the flag.
   readonly view: 'trace' | 'ledger'
   // The steps that set it off.
@@ -76,6 +78,19 @@ function samePath(a: string, b: string): boolean {
   return x === y || x.endsWith('/' + y) || y.endsWith('/' + x)
 }
 
+// The session's edits after its last source edit: test-only work since the code last changed.
+function editsSinceSourceEdit(session: readonly Turn[]): Step[] {
+  const edits = session.flatMap(flatSteps).filter(changedFiles)
+  return edits.slice(edits.findLastIndex(touchesSource) + 1)
+}
+
+// At a commit or push: whether the session's last edit has no test, lint, type check, or build after it.
+export function editUncheckedAtCommit(session: readonly Turn[]): boolean {
+  const steps = session.flatMap(flatSteps)
+  const lastEdit = steps.findLastIndex(changedFiles)
+  return lastEdit >= 0 && !steps.slice(lastEdit + 1).some(step => step.verification)
+}
+
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
 }
@@ -95,6 +110,7 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
       kind: 'ended-red',
       level: 'flag',
       title: 'Ended red',
+      fact: 'More failures in the last test run',
       view: 'ledger',
       stepIds: [runs[runs.length - 1].id],
       reason: `The last test run has ${failing} failures against ${before} at the start of the session; its output named no tests, so this compares counts.`,
@@ -103,16 +119,20 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
   const already = new Set(base?.failingIds ?? [])
   const fresh = last.failingIds.filter(id => !already.has(id))
   if (fresh.length === 0) return null
-  const edits = flatSteps(turn).filter(changedFiles)
-  const isRedStep = !edits.some(touchesSource) && fresh.every(id => edits.some(step => touchesFile(step, testFile(id))))
+  // A red run that matches intent: the failing tests were written since the last source edit, so
+  // rerunning a test-first test in a later turn is still a Red step.
+  const sinceSource = editsSinceSourceEdit(session)
+  const isRedStep =
+    !flatSteps(turn).filter(changedFiles).some(touchesSource) && fresh.every(id => sinceSource.some(step => touchesFile(step, testFile(id))))
   if (isRedStep) {
     return {
       kind: 'red-step',
       level: 'note',
       title: 'Red step',
+      fact: 'Failures only in tests written since the last source edit',
       view: 'ledger',
       stepIds: [runs[runs.length - 1].id],
-      reason: 'The new failures are all in tests this turn wrote, and no source file changed: the first step of test-driven development, before the code exists.',
+      reason: 'The new failures are all in tests written since the last source edit, and this turn changed no source file: the first step of test-driven development, before the code exists.',
       testIds: fresh,
     }
   }
@@ -120,6 +140,7 @@ function endedRed(turn: Turn, session: readonly Turn[]): Finding | null {
     kind: 'ended-red',
     level: 'flag',
     title: 'Ended red',
+    fact: base ? 'New failures in the last test run' : 'Failures in the last test run, no baseline',
     view: 'ledger',
     stepIds: [runs[runs.length - 1].id],
     reason: base
@@ -136,6 +157,7 @@ function unverifiedEdit(turn: Turn): Finding | null {
     kind: 'unverified-edit',
     level: 'flag',
     title: 'Unverified edit',
+    fact: 'No test or check ran since the last edit',
     view: 'trace',
     stepIds: [edits[edits.length - 1].id],
     reason: 'Files changed and no test, lint, type check, or build ran after the last edit, so nothing has shown the change works.',
@@ -181,9 +203,10 @@ function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
       kind: 'test-changed-to-pass',
       level: 'flag',
       title: 'Test changed to pass',
+      fact: 'A failing test passed with only the test changed',
       view: 'ledger',
       stepIds: [],
-      reason: `${plural(flagged.length, 'test', 'tests')} failed and then passed with only the test itself edited in between: check whether the test or the code was wrong.`,
+      reason: `${plural(flagged.length, 'test', 'tests')} failed and then passed with only the test itself edited in between. This says what changed, not whether the test or the code was wrong.`,
       testIds: flagged,
     })
   }
@@ -192,6 +215,7 @@ function changedTests(turn: Turn, session: readonly Turn[]): Finding[] {
       kind: 'test-and-source-changed',
       level: 'note',
       title: 'Test and source both changed',
+      fact: 'Tests passed after both test and source changed',
       view: 'ledger',
       stepIds: [],
       reason: `${plural(noted.length, 'test', 'tests')} passed after both the test and the source changed: usual for a bug fix, worth a look at what the test now asserts.`,
@@ -210,6 +234,7 @@ function boundaryMock(turn: Turn, options: JudgeOptions): Finding | null {
     kind: 'boundary-mock',
     level: options.boundaryMockAsFlag ? 'flag' : 'note',
     title: 'Boundary mock',
+    fact: `A test now mocks ${hits.join(', ')}`,
     view: 'ledger',
     stepIds: steps.map(step => step.id),
     reason: `A test now mocks ${hits.join(', ')}. A mock can pass while the real thing behaves differently: is there an unmocked test at this boundary?`,
