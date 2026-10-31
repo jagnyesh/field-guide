@@ -1,4 +1,5 @@
 """Checks a headless run's debug log: the plugin's lines, and the metadata-only rule."""
+import glob
 import json
 import os
 import sys
@@ -93,6 +94,12 @@ if scenario == "commit-unchecked":
     publishes = [json.loads(line[line.index("field-guide-publish: ") + len("field-guide-publish: "):]) for line in open(log, errors="replace") if "field-guide-publish: " in line]
     check([p["unchecked"] for p in publishes] == [True, False],
           f"a commit straight after an edit is unchecked, one after a test run is not ({publishes})")
+
+if scenario == "commit-denied":
+    denied = [d for f in sorted(glob.glob(os.path.join(os.path.dirname(log), "result-*.json")))
+              for d in json.load(open(f)).get("permission_denials", []) if "git commit" in str(d.get("tool_input", {}).get("command", ""))]
+    publishes = [line for line in open(log, errors="replace") if "field-guide-publish: " in line]
+    check(len(denied) >= 1 and publishes == [], f"a denied commit raises no publish check (denied {len(denied)}, checks {len(publishes)})")
 
 def last_line_of(path):
     lines = [line[line.index(PREFIX) + len("field-guide: "):] for line in open(path, errors="replace") if PREFIX in line]

@@ -59,7 +59,7 @@ The two strengths of verification for an edit. **Tested**: a test runner ran aft
 _Avoid_: verified (without saying which strength), validated
 
 **Unverified edit**:
-A **Settled turn** that edits files and is neither **Tested** nor **Checked** after the last edit. A failing run counts: verification is that a check ran, not that it passed. The same check runs when the agent starts a `git commit` or `git push`: if nothing tested or checked the session's last edit, a toast says so, mid-turn.
+A **Settled turn** that edits files and is neither **Tested** nor **Checked** after the last edit. A failing run counts: verification is that a check ran, not that it passed. The same check runs once the agent's `git commit` or `git push` has run: if nothing tested or checked the session's last edit, a toast says so, mid-turn. A denied or failed one raises nothing.
 
 **Baseline run**:
 The session's first run of a given test runner, if it came before any source edit in the session. Its failures are **Already failing**. If the first run came after an edit, there is no baseline for that runner.
