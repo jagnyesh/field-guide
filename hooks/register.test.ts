@@ -164,7 +164,7 @@ describe('Loop Trace pane', () => {
     standIn(on, EDITED)
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
     await band.unmount()
   })
 
@@ -179,7 +179,7 @@ describe('Loop Trace pane', () => {
     ]))
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
     expect(await band.find({ type: 'Text', text: /context 25%/ })).toBeDefined()
     await band.unmount()
   })
@@ -190,8 +190,8 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
     expect(await band.find({ type: 'Text', text: /another mod is holding a command/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
-    expect(engine.statuses.some(text => text?.includes('Unverified edit'))).toBe(true)
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
+    expect(engine.statuses.some(text => text?.includes('No test or check ran since the last edit'))).toBe(true)
     await band.unmount()
   })
 
@@ -200,7 +200,7 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const survey = BAND()
     const band = await $.ui.mount({ ...survey, props: { ...survey.props, hasSurvey: true } })
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
     await band.unmount()
   })
 
@@ -209,7 +209,7 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     for (const columns of [144, 80, 24]) {
       const band = await $.ui.mount(BAND(columns))
-      const line = await band.find({ type: 'Text', text: /Unverified|…/ })
+      const line = await band.find({ type: 'Text', text: /No test or check|…/ })
       expect(line).toBeDefined()
       expect((line?.text ?? '').length).toBeLessThanOrEqual(columns)
       await band.unmount()
@@ -246,7 +246,7 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     await $.command.run({ ...RUN, args: 'trace' })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
     expect(await band.find({ type: 'Text', text: /context 25%/ })).toBeDefined()
     await band.unmount()
   })
@@ -256,7 +256,7 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     await $.prompt.submit({ text: 'thanks, now the docs', origin: { kind: 'composer' }, turnId: 't2', wait: false })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
     await band.unmount()
   })
 
@@ -265,7 +265,7 @@ describe('Loop Trace pane', () => {
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     await $.command.run({ ...RUN, args: 'ledger' })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Unverified edit/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
     await band.unmount()
   })
 
@@ -279,6 +279,8 @@ describe('Loop Trace pane', () => {
     expect(engine.filled.length).toBe(1)
     expect(engine.filled[0]).toMatch(/Turn 1/)
     expect(engine.filled[0]).toMatch(/Unverified edit/)
+    expect(engine.filled[0]).toMatch(/information, not a request to change approach/)
+    expect(engine.filled[0]).not.toMatch(/please check/i)
     await ui.unmount()
   })
 
@@ -300,7 +302,7 @@ describe('Loop Trace pane', () => {
     standIn(on, RED)
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Ended red · Turn 2 · \/guide ledger/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /New failures in the last test run · Turn 2 · \/guide ledger/ })).toBeDefined()
     await band.unmount()
   })
 
@@ -349,6 +351,28 @@ describe('Loop Trace pane', () => {
     const ui = await $.ui.mount(TRACE)
     expect(await ui.find({ type: 'Text', text: /edit\s+Bash\s+python tools\/rewrite\.py · via shell, exact: src\/settings\.ini · not in the diff views/ })).toBeDefined()
     await ui.unmount()
+  })
+
+  test('a commit with no test or check since the last edit toasts mid-turn, stating what happened', async ($, on) => {
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    const engine = standIn(on, EDITED)
+    on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'git add -A && git commit -m "shorter window"', description: 'commit' })
+    await clock.settle()
+    expect(engine.toasts.filter(t => t.includes('git commit'))).toEqual(['Field Guide · git commit with no test or check since the last edit.'])
+  })
+
+  test('a commit after a test run, red or green, raises nothing', async ($, on) => {
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    const engine = standIn(on, TESTED)
+    on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'git add -A && git commit -m "shorter window"', description: 'commit' })
+    await clock.settle()
+    expect(engine.toasts.filter(t => t.includes('git commit'))).toEqual([])
   })
 
   test('a read-only shell call takes no snapshot', async ($, on) => {
@@ -526,7 +550,7 @@ describe('Loop Trace pane', () => {
     standIn(on, MOCKED)
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /Boundary mock/ })).toBeUndefined()
+    expect(await band.find({ type: 'Text', text: /A test now mocks/ })).toBeUndefined()
     await band.unmount()
     const ledger = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
     expect(await ledger.find({ type: 'Text', text: /Boundary mock: A test now mocks requests/ })).toBeDefined()
@@ -537,7 +561,7 @@ describe('Loop Trace pane', () => {
     standIn(on, MOCKED)
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
-    expect(await band.find({ type: 'Text', text: /⚑ Boundary mock/ })).toBeDefined()
+    expect(await band.find({ type: 'Text', text: /⚑ A test now mocks/ })).toBeDefined()
     await band.unmount()
   })
 

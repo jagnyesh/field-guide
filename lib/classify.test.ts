@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { classify } from './classify'
+import { classify, gitPublish } from './classify'
 
 describe('Step Classifier', () => {
   test('tools that only look are read or search; tools that change files are edit; subagents are delegate', async () => {
@@ -44,5 +44,19 @@ describe('Step Classifier', () => {
   test('a command the engine says is not read-only is never a read or search', async () => {
     expect(bash('cat a.txt', false)).toBe('run')
     expect(bash('cat a.txt', true)).toBe('read')
+  })
+})
+
+describe('Step Classifier: commits and pushes', () => {
+  test('finds a git commit or push anywhere in the command line, past git\'s own options', async () => {
+    expect(gitPublish('git commit -am "shorter window"')).toBe('commit')
+    expect(gitPublish('git add -A && git -c user.name=x -C repo push origin main')).toBe('push')
+    expect(gitPublish('pytest -q; git commit -qm x')).toBe('commit')
+  })
+
+  test('other git commands, and the word commit as an argument, are neither', async () => {
+    expect(gitPublish('git log --grep commit')).toBeNull()
+    expect(gitPublish('git status')).toBeNull()
+    expect(gitPublish('echo git commit')).toBeNull()
   })
 })

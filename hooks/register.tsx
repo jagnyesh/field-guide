@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import { alreadyFailing, judge } from '../lib/flags'
+import { commandVerification, gitPublish } from '../lib/classify'
+import { alreadyFailing, editUncheckedAtCommit, judge } from '../lib/flags'
 import type { Finding, JudgeOptions } from '../lib/flags'
 import { debugLine, stripParams } from '../lib/metadata'
 import { diffCompaction } from '../lib/compaction'
@@ -83,8 +84,22 @@ async function readRows($: EngineInterface, agentId?: string): Promise<Transcrip
 }
 
 async function rebuild($: EngineInterface): Promise<void> {
-  const main = (await readRows($)) ?? []
+  const { main, turns } = await readTimeline($)
   mainRows = main
+  timeline = turns
+  const memory = await loadMemory($)
+  earlier = { reads: memory.earlierReads, reattached: memory.reattached }
+  compactionCount = memory.compactions.length
+  summaryText = main.find(row => row.role === 'user' && SUMMARY_START.test(row.text.trimStart()))?.text ?? null
+  const latest = timeline[timeline.length - 1]
+  latestSettled = latest?.isSettled ?? true
+  findings = (latest && judge(latest, timeline, judgeOptions)) || []
+  await readUsage($)
+  $.ui.invalidate('ui.render')
+}
+
+async function readTimeline($: EngineInterface): Promise<{ main: TranscriptMessage[]; turns: Turn[] }> {
+  const main = (await readRows($)) ?? []
   // Subagents can start subagents, so follow Agent steps until no new id turns up.
   const subagents = new Map<string, TranscriptMessage[]>()
   const pending = startedAgents(main)
@@ -96,16 +111,15 @@ async function rebuild($: EngineInterface): Promise<void> {
     pending.push(...startedAgents(rows))
   }
   const facts = await read($, probe)
-  timeline = buildTimeline(main, agentId => subagents.get(agentId), id => facts[id], sessionCwd)
-  const memory = await loadMemory($)
-  earlier = { reads: memory.earlierReads, reattached: memory.reattached }
-  compactionCount = memory.compactions.length
-  summaryText = main.find(row => row.role === 'user' && SUMMARY_START.test(row.text.trimStart()))?.text ?? null
-  const latest = timeline[timeline.length - 1]
-  latestSettled = latest?.isSettled ?? true
-  findings = (latest && judge(latest, timeline, judgeOptions)) || []
-  await readUsage($)
-  $.ui.invalidate('ui.render')
+  return { main, turns: buildTimeline(main, agentId => subagents.get(agentId), id => facts[id], sessionCwd) }
+}
+
+// A commit or push is where an unchecked edit leaves the session, so it is checked mid-turn as well
+// as at the turn's end: a toast for the developer that states what happened, never sent to the model.
+async function checkPublish($: EngineInterface, action: 'commit' | 'push', command: string): Promise<void> {
+  const unchecked = commandVerification(command) === null && editUncheckedAtCommit((await readTimeline($)).turns)
+  if (unchecked) $.ui.toast(`Field Guide · git ${action} with no test or check since the last edit.`)
+  if ((await $.env.get('FIELD_GUIDE_DEBUG')) === '1') $.ui.log(`field-guide-publish: ${JSON.stringify({ action, unchecked })}`, { to: 'debug' })
 }
 
 async function readUsage($: EngineInterface): Promise<void> {
@@ -142,10 +156,11 @@ async function acknowledgeFlags($: EngineInterface, view?: string): Promise<void
   await update($, acknowledged, seen => [...new Set([...seen, ...keys])].slice(-200))
 }
 
-// What "Tell Claude" puts in the prompt box: the developer edits it and sends it as their own.
+// What "Tell Claude" puts in the prompt box: the developer edits it and sends it as their own. A flag
+// says what happened, not whether it was intended, so the hand-off reports it and leaves the plan alone.
 function handOff(finding: Finding): string {
   const ids = finding.testIds?.length ? ` Tests: ${finding.testIds.map(stripParams).join(', ')}.` : ''
-  return `Field Guide flagged Turn ${timeline.length}: ${finding.title}. ${finding.reason}${ids} Please check this before going on.`
+  return `Field Guide noted on Turn ${timeline.length}: ${finding.title}. ${finding.reason}${ids} This is information, not a request to change approach: if it was intended, keep to the plan.`
 }
 
 // The latest turn's findings that a view explains, each with its reason and a Tell Claude button.
@@ -193,7 +208,7 @@ function fit(text: string, columns: number): string {
 function bandLine(isWorking: boolean, seen: readonly string[]): { text: string; isFlag: boolean } | null {
   const flag = findings.find(f => f.level === 'flag' && !seen.includes(flagKey(f)))
   if (flag && latestSettled && !isWorking) {
-    return { text: `⚑ ${flag.title} · Turn ${timeline.length} · /guide ${flag.view}`, isFlag: true }
+    return { text: `⚑ ${flag.fact} · Turn ${timeline.length} · /guide ${flag.view}`, isFlag: true }
   }
   const facts: string[] = []
   const run = lastRun()
@@ -404,8 +419,11 @@ export const register: Register = (on, options) => {
   // The Live Probe: watch-only, the call and its result pass through untouched. It follows the
   // built-in shell and MCP tools that stand in for it (lean-ctx's ctx_shell, for one).
   on('tool.call', async ($, e, next) => {
-    const isShell = e.tool === 'Bash' || (e.tool.startsWith('mcp__') && asBuiltIn({ tool_use_id: e.tool_use_id, tool: e.tool, input: e as Record<string, unknown> }).tool === 'Bash')
-    if (!isShell) return next(e)
+    const standIn = e.tool.startsWith('mcp__') ? asBuiltIn({ tool_use_id: e.tool_use_id, tool: e.tool, input: e as Record<string, unknown> }) : null
+    if (e.tool !== 'Bash' && standIn?.tool !== 'Bash') return next(e)
+    const command = String((standIn?.input ?? (e as Record<string, unknown>)).command ?? '')
+    const action = gitPublish(command)
+    if (action) void $.clock.after(0, () => void checkPublish($, action, command).catch(err => fail($, 'publish check', err)))
     const start = await $.clock.now()
     const result = await next(e)
     try {

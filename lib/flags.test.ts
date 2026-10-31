@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { judge } from './flags'
+import { editUncheckedAtCommit, judge } from './flags'
 import { OUTPUT } from './fixtures/pytest'
 import { buildTimeline } from './transcript'
 import type { ToolUse, TranscriptMessage } from './transcript'
@@ -109,6 +109,36 @@ describe('Loop Flags: Red step', () => {
       run('p2', pytestOut(['tests/test_legacy.py::test_legacy_format', 'tests/test_ratelimit.py::test_over_limit', 'tests/test_feature.py::test_feature'], 3)),
     ])
     expect(kinds(turns)).toEqual(['ended-red'])
+  })
+
+  const featureRed = pytestOut(['tests/test_legacy.py::test_legacy_format', 'tests/test_ratelimit.py::test_over_limit', 'tests/test_feature.py::test_feature'], 3)
+  const writeFeatureTest = use('w', 'Write', { file_path: 'tests/test_feature.py', content: 'def test_feature(): assert feature()' })
+
+  test('rerunning a test written in an earlier turn, with no source edit since, is still a Red step', async () => {
+    const turns = session([run('p1', OUTPUT.quiet)], [writeFeatureTest, run('p2', featureRed)], [run('p3', featureRed)])
+    expect(kinds(turns)).toEqual(['red-step'])
+  })
+
+  test('a source edit after the test was written makes the same failure Ended red', async () => {
+    const turns = session([run('p1', OUTPUT.quiet)], [writeFeatureTest, run('p2', featureRed)], [use('e', 'Edit', { file_path: 'src/feature.py' }), run('p3', featureRed)])
+    expect(kinds(turns)).toEqual(['ended-red'])
+  })
+})
+
+describe('Loop Flags: a commit or push', () => {
+  const at = (...turns: ToolUse[][]) => editUncheckedAtCommit(session(...turns))
+
+  test('finds the last edit unchecked when nothing verified it, even in an earlier turn', async () => {
+    expect(at([edit('e')], [use('l', 'Bash', { command: 'git log -1' })])).toBe(true)
+  })
+
+  test('finds it checked once a test, lint, type check, or build ran after it, red or green', async () => {
+    expect(at([edit('e'), run('p', OUTPUT.quiet)])).toBe(false)
+    expect(at([edit('e')], [use('t', 'Bash', { command: 'npx tsc --noEmit' })])).toBe(false)
+  })
+
+  test('with no edit in the session there is nothing to check', async () => {
+    expect(at([run('p', OUTPUT.quiet)])).toBe(false)
   })
 })
 
