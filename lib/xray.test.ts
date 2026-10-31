@@ -40,6 +40,24 @@ describe('Context X-ray: fixed load', () => {
     ])
   })
 
+  test('keeps schemas loaded on demand out of the servers the fixed load pays for', async () => {
+    const mcpTools = [
+      ...BREAKDOWN.mcpTools,
+      { name: 'mcp__mail__send', serverName: 'mail', tokens: 900, isLoaded: false },
+      { name: 'mcp__mail__read', serverName: 'mail', tokens: 700, isLoaded: false },
+      { name: 'mcp__docs__write', serverName: 'docs', tokens: 400, isLoaded: false },
+    ]
+    const load = fixedLoad({ breakdown: { ...BREAKDOWN, mcpTools } })
+    expect(load.mcpServers).toEqual([
+      { server: 'ctx', tokens: 2_700, tools: 2 },
+      { server: 'docs', tokens: 1_500, tools: 1 },
+    ])
+    expect(load.mcpDeferred).toEqual([
+      { server: 'mail', tokens: 1_600, tools: 2 },
+      { server: 'docs', tokens: 400, tools: 1 },
+    ])
+  })
+
   test('traces each memory file to the files it imported, with paths and estimated sizes', async () => {
     const ancestors = [
       {

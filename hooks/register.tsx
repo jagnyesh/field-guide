@@ -254,6 +254,7 @@ async function readXray($: EngineInterface, exact = false): Promise<void> {
       categories: xray.categories.map(c => ({ name: c.name, size: c.tokens })),
       total: xray.total,
       mcpServers: xray.mcpServers.length,
+      mcpDeferred: xray.mcpDeferred.length,
       memory: xray.memory.map(m => ({ path: m.path, imports: m.imports.length })),
       sections: xray.sections.length,
     }
@@ -502,6 +503,12 @@ export const register: Register = (on, options) => {
         {xray.mcpServers.length > 0 && <Text bold>MCP servers</Text>}
         {xray.mcpServers.map(m => (
           <Text key={`mcp:${m.server}`}>{row(m.server, m.tokens, ` (${m.tools} tool${m.tools === 1 ? '' : 's'})`)}</Text>
+        ))}
+        {xray.mcpDeferred.length > 0 && <Text bold>MCP servers loaded on demand (not in the fixed load)</Text>}
+        {xray.mcpDeferred.map(m => (
+          <Text key={`mcp-deferred:${m.server}`} dimColor>
+            {row(m.server, m.tokens, ` (${m.tools} tool${m.tools === 1 ? '' : 's'}) if all loaded`)}
+          </Text>
         ))}
         {xray.memory.length > 0 && <Text bold>Memory files</Text>}
         {xray.memory.flatMap(m => [
