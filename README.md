@@ -57,7 +57,7 @@ One line above the prompt shows a flag once a turn has settled, stated as what h
 
 | Finding | Kind | When |
 |---|---|---|
-| Unverified edit | flag | A turn edited files and no test, lint, type check, or build ran after the last edit. A failing run counts. The same check toasts mid-turn when Claude starts a `git commit` or `git push`. |
+| Unverified edit | flag | A turn edited files and no test, lint, type check, or build ran after the last edit. A failing run counts. The same check toasts mid-turn once a `git commit` or `git push` has run; a denied or failed one raises nothing. |
 | Ended red | flag | The turn's last test run has a failing test that wasn't already failing at the session's first run. |
 | Test changed to pass | flag | A test failed and then passed with only its own test file edited in between, or with a skip, expected-failure, or run-only marker added. |
 | Red step | note | The new failures are all in tests written since the last source edit, and the turn changed no source file (test-first). |
@@ -83,7 +83,7 @@ Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on
 
 | Checked | Behaviours |
 |---|---|
-| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass, Boundary mock; the mid-turn check at `git commit`; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
+| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass, Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
 | Live, interactive (tmux at 80 and 144 columns) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
 | Stand-in host only (`claude plugin test`) | Rendering of every pane and the band, giving way in the band, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
 

@@ -353,7 +353,7 @@ describe('Loop Trace pane', () => {
     await ui.unmount()
   })
 
-  test('a commit with no test or check since the last edit toasts mid-turn, stating what happened', async ($, on) => {
+  test('a commit that ran with no test or check since the last edit toasts mid-turn, stating what happened', async ($, on) => {
     const clock = mock.clock(on, { now: 5_000 })
     mock.env(on, {})
     const engine = standIn(on, EDITED)
@@ -371,6 +371,20 @@ describe('Loop Trace pane', () => {
     on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false }, text: '' }))
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     await $.tool.call({ tool: 'Bash', command: 'git add -A && git commit -m "shorter window"', description: 'commit' })
+    await clock.settle()
+    expect(engine.toasts.filter(t => t.includes('git commit'))).toEqual([])
+  })
+
+  test('a commit that was denied or failed raises nothing', async ($, on) => {
+    const clock = mock.clock(on, { now: 5_000 })
+    mock.env(on, {})
+    const engine = standIn(on, EDITED)
+    let answer: { deny: string } | { isError: true; result: unknown; text: string } = { deny: 'The user rejected this tool use.' }
+    on('tool.call', () => answer)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'git commit -m "shorter window"', description: 'commit' })
+    answer = { isError: true, result: undefined, text: 'Exit code 1' }
+    await $.tool.call({ tool: 'Bash', command: 'git commit -m "shorter window"', description: 'commit' })
     await clock.settle()
     expect(engine.toasts.filter(t => t.includes('git commit'))).toEqual([])
   })

@@ -423,11 +423,12 @@ export const register: Register = (on, options) => {
     if (e.tool !== 'Bash' && standIn?.tool !== 'Bash') return next(e)
     const command = String((standIn?.input ?? (e as Record<string, unknown>)).command ?? '')
     const action = gitPublish(command)
-    if (action) void $.clock.after(0, () => void checkPublish($, action, command).catch(err => fail($, 'publish check', err)))
     const start = await $.clock.now()
     const result = await next(e)
     try {
       if (result.deny !== undefined) return result
+      // Only once it ran: the permission prompt is inside next(e), and a denied or failed commit left nothing.
+      if (action && !result.isError) void $.clock.after(0, () => void checkPublish($, action, command).catch(err => fail($, 'publish check', err)))
       if (result.isReadOnly) {
         await remember($, e.tool_use_id, { isReadOnly: true })
         return result
