@@ -168,6 +168,17 @@ describe('Loop Flags: Test changed to pass', () => {
     expect(found(after(skip, sourceEdit('s')))).toEqual([['test-changed-to-pass', 'flag', [OVER]]])
   })
 
+  test('a Write that rewrites a test file keeps its existing skip without adding one', async () => {
+    // As the session's rows carry it: no originalFile, the change as diff hunks.
+    const rewrite = (lines: string[]) => ({
+      ...use('w', 'Write', { file_path: '/work/tests/test_ratelimit.py', content: '@pytest.mark.skip(reason="flaky")\n...' }),
+      result: { type: 'update', originalFile: null, structuredPatch: [{ lines: [' @pytest.mark.skip(reason="flaky")', ...lines] }] },
+    })
+    const fix = ['-    assert status_for(11) == 403', '+    assert status_for(11) == 429']
+    expect(found(after(rewrite(fix), sourceEdit('s')))).toEqual([['test-and-source-changed', 'note', [OVER]]])
+    expect(found(after(rewrite([...fix, '+@pytest.mark.skip(reason="later")']), sourceEdit('s')))).toEqual([['test-changed-to-pass', 'flag', [OVER]]])
+  })
+
   test('a later run that did not cover the test proves nothing', async () => {
     const turns = session([run('p1', OUTPUT.quiet)], [
       testEdit('t'),

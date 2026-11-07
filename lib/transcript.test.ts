@@ -8,6 +8,25 @@ const reply = (text: string, toolUses: ToolUse[] = []): TranscriptMessage => ({ 
 const use = (id: string, tool: string, input: Record<string, unknown>, text = 'ok'): ToolUse => ({ tool_use_id: id, tool, input, text })
 
 describe('Transcript Reader', () => {
+  test('an edit adds a marker only when it leaves more than the text it replaced', async () => {
+    const SKIP = '@pytest.mark.skip(reason="flaky")\ndef test_burst(): ...\n'
+    const marked = (u: ToolUse) => buildTimeline([prompt('go'), reply('', [u])])[0].steps[0].addsMarker ?? false
+    const write = (result?: unknown) => ({ ...use('w', 'Write', { file_path: 'tests/test_x.py', content: SKIP + 'def test_a(): ...\n' }), result })
+    const patch = (...lines: string[]) => ({ type: 'update', originalFile: null, structuredPatch: [{ lines: [' @pytest.mark.skip(reason="flaky")', ...lines] }] })
+    expect(marked(write(patch('-def test_a(): pass', '+def test_a(): ...')))).toBe(false)
+    expect(marked(write(patch('+@pytest.mark.skip(reason="later")', '+def test_a(): ...')))).toBe(true)
+    expect(marked(write({ type: 'create', originalFile: null, structuredPatch: [] }))).toBe(true)
+    // With nothing on record about what the Write replaced, nothing is claimed.
+    expect(marked(write())).toBe(false)
+    expect(marked(write({ type: 'update', originalFile: null }))).toBe(false)
+    const notebook = (oldSource: string) => ({
+      ...use('n', 'NotebookEdit', { notebook_path: 'tests/t.ipynb', cell_id: 'c1', new_source: SKIP + '    assert 1 == 1\n' }),
+      result: { old_source: oldSource },
+    })
+    expect(marked(notebook(SKIP + '    assert 1 == 2\n'))).toBe(false)
+    expect(marked(notebook('def test_burst(): ...\n'))).toBe(true)
+  })
+
   test('a developer prompt and its tool calls form one turn, in order', async () => {
     const turns = buildTimeline([
       prompt('rename greet to welcome'),

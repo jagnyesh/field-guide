@@ -139,10 +139,27 @@ function mockFacts(use: ToolUse): Pick<Step, 'mockTargets'> {
   return added.length ? { mockTargets: added } : {}
 }
 
+// What an edit took out and put in. Write and NotebookEdit carry no old text in their input, only
+// in the stored result: a Write's diff hunks (none for a new file), a NotebookEdit's earlier cell.
+// Null when the result doesn't say, so nothing is claimed.
+function replaced(use: ToolUse): { before: string; after: string } | null {
+  const result = typeof use.result === 'object' && use.result !== null ? (use.result as Record<string, unknown>) : {}
+  if (use.tool === 'Write') {
+    if (result.type === 'create') return { before: '', after: texts(use.input, 'content') }
+    if (!Array.isArray(result.structuredPatch)) return null
+    // The session's rows leave originalFile null, so the hunks' - and + lines say what changed.
+    const lines = result.structuredPatch.flatMap(hunk => (Array.isArray(hunk?.lines) ? hunk.lines : [])).filter((l): l is string => typeof l === 'string')
+    return { before: lines.filter(l => l.startsWith('-')).join('\n'), after: lines.filter(l => l.startsWith('+')).join('\n') }
+  }
+  if (use.tool === 'NotebookEdit') return typeof result.old_source === 'string' ? { before: result.old_source, after: texts(use.input, 'new_source') } : null
+  return { before: texts(use.input, 'old_string'), after: texts(use.input, 'new_string', 'content', 'new_source') }
+}
+
 // Read in memory only, never kept: does this edit leave more markers than it found?
 function addsMarker(use: ToolUse): boolean {
   const count = (text: string) => text.match(TEST_MARKER)?.length ?? 0
-  return count(texts(use.input, 'new_string', 'content', 'new_source')) > count(texts(use.input, 'old_string'))
+  const change = replaced(use)
+  return change !== null && count(change.after) > count(change.before)
 }
 
 function shellEditOf(use: ToolUse, facts: ProbeFacts | undefined): Step['shellEdit'] | undefined {

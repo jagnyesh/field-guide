@@ -83,7 +83,7 @@ Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on
 
 | Checked | Behaviours |
 |---|---|
-| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass, Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
+| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass (also through a Write that rewrites the test file), Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
 | Live, interactive (tmux at 80 and 144 columns) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
 | Stand-in host only (`claude plugin test`) | Rendering of every pane and the band, giving way in the band, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
 
