@@ -781,6 +781,13 @@ describe('Loop Trace pane', () => {
     const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
     expect(await ui.find({ type: 'Text', text: new RegExp(`^Turn 1 · ${at(T0)} · pytest · 3 passed · 4\\.2s$`) })).toBeDefined()
     await ui.unmount()
+    // Opened the next day, the run carries its date, so a session past midnight reads in order.
+    await clock.set(T0 + 24 * 60 * 60_000)
+    const later = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    const d = new Date(T0)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(await later.find({ type: 'Text', text: new RegExp(`^Turn 1 · ${date} ${at(T0).slice(0, 5)} · pytest · 3 passed · 4\\.2s$`) })).toBeDefined()
+    await later.unmount()
   })
 
   test('the Autopsy shows when each compaction happened, at which turn, and how long after the one before', async ($, on) => {

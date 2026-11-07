@@ -713,7 +713,7 @@ export const register: Register = (on, options) => {
     )
   })
 
-  on('ui.render', { component: 'Pane', requestId: LEDGER }, ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: LEDGER }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const runs = timeline.flatMap(turn => flatSteps(turn).flatMap(step => (step.run ? [{ turn, step, run: step.run }] : [])))
     if (runs.length === 0) {
@@ -724,12 +724,14 @@ export const register: Register = (on, options) => {
       )
     }
     const already = alreadyFailing(timeline)
+    // A session can run past midnight, so a run from another day carries its date.
+    const current = await now($)
     return (
       <Box flexDirection="column">
         {findingList($, e, 'ledger')}
         {runs.flatMap(({ turn, step, run }) => [
           <Text key={step.id} color={run.failed + run.errors > 0 ? 'red' : 'green'}>
-            {`Turn ${turn.index + 1}${step.startedAt !== undefined ? ` · ${clockTime(step.startedAt)}` : ''} · ${run.runner} · ${runCounts(run)}${took(step.runMs) ? ` · ${took(step.runMs)}` : ''}`}
+            {`Turn ${turn.index + 1}${step.startedAt !== undefined ? ` · ${stamp(step.startedAt, current ?? step.startedAt)}` : ''} · ${run.runner} · ${runCounts(run)}${took(step.runMs) ? ` · ${took(step.runMs)}` : ''}`}
           </Text>,
           ...run.failingIds.map(id =>
             already.get(run.runner)?.has(id) ? (
