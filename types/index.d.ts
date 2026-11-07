@@ -1,8 +1,15 @@
 // Field Guide's $.state contract. Values here are metadata only (ADR 0003): flag keys, the Live
-// Probe's read-only flag and changed paths, compaction counts, and paths read: never transcript text.
+// Probe's read-only flag, changed paths and timings, compaction counts, and paths read: never transcript text.
 export type ProbeRecord = { isReadOnly?: boolean; shellEdits?: string[] }
 
-export type CompactionState = { trigger: string; tokensBefore?: number; tokensAfter?: number; kept: number; summarised: number }
+// When a tool call was made and how long until it was answered, in $.clock.now()'s milliseconds.
+export type CallTiming = { startedAt: number; durationMs: number }
+
+// A turn's first start and last end across the main-loop turns it took (hand-backs included).
+export type TurnTiming = { startedAt: number; endedAt: number }
+
+// `at` and `turn` are absent on records an earlier version stored.
+export type CompactionState = { trigger: string; tokensBefore?: number; tokensAfter?: number; kept: number; summarised: number; at?: number; turn?: number }
 
 export type EarlierRead = { path: string; agent?: string }
 
@@ -23,6 +30,8 @@ declare module 'claude-code' {
       toasted: string[]
       acknowledged: string[]
       probe: Record<string, ProbeRecord>
+      timing: Record<string, CallTiming>
+      turnTiming: Record<string, TurnTiming>
     }
   }
 }

@@ -186,6 +186,25 @@ export function parseTestRun(command: string, output: string): TestRun | null {
   return null
 }
 
+// The run's length as each runner prints it: "3 passed in 4.20s", "Duration  174ms (…)", "Time:  0.115 s".
+const DURATION: Readonly<Record<Runner, RegExp>> = {
+  pytest: /^=*\s*(?:\d+ (?:failed|passed|skipped|deselected|xfailed|xpassed|errors?|warnings?)(?:, )?)+ in ([\d.]+)(s)/,
+  vitest: /^\s*Duration\s+([\d.]+)(ms|s)\b/,
+  jest: /^Time:\s+([\d.]+) ?(ms|s)\b/,
+}
+
+// How long the runner said the run took, in milliseconds: from the output, so a resume keeps it.
+export function reportedMs(runner: Runner, output: string): number | undefined {
+  const found = output
+    .split('\n')
+    .map(line => DURATION[runner].exec(line.trim()))
+    .filter(Boolean)
+    .pop()
+  if (!found) return undefined
+  const value = Number(found[found.length - 2])
+  return Math.round(found[found.length - 1] === 'ms' ? value : value * 1_000)
+}
+
 // pytest joins file and test with "::", vitest with " > ", jest with " › ".
 const ID_SEPARATOR = /::| > | › /
 

@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 import { OUTPUT } from '../lib/fixtures/pytest'
 import { standIn } from './stand-in'
+import { clockTime } from '../lib/time'
 
 const ROWS = [
   { role: 'user', text: 'rename greet to welcome', toolUses: [] },
@@ -664,5 +665,138 @@ describe('Loop Trace pane', () => {
     expect(await ui.find({ type: 'Text', text: /^Tests ran this turn$/ })).toBeDefined()
     await ui.unmount()
   })
-})
+  // 2026-11-07 15:41:07 UTC; the panes show it in the local zone, as clockTime does.
+  const T0 = Date.UTC(2026, 10, 7, 15, 41, 7)
+  const SHELL = { stdout: '', stderr: '', interrupted: false }
+  const READ = { type: 'text', file: { filePath: '/work/src/app.py', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } }
+  const at = (ms: number) => clockTime(ms)
 
+  test('Loop Trace shows when each step started and, once it passes a second, how long it took', async ($, on) => {
+    const ids: string[] = []
+    const rows = () => [
+      { role: 'user', text: 'rename greet', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [
+          { tool_use_id: ids[0], tool: 'Read', input: { file_path: '/work/src/app.py' }, text: 'x' },
+          { tool_use_id: ids[1], tool: 'Bash', input: { command: 'ls src' }, text: 'app.py' },
+        ],
+      },
+    ]
+    const clock = mock.clock(on, { now: T0 })
+    mock.env(on, {})
+    standIn(on, rows, { status: '' })
+    on('tool.call', async (_, e) => {
+      ids.push(e.tool_use_id)
+      if (e.tool !== 'Read') return { result: SHELL, text: 'app.py', isReadOnly: true }
+      await clock.sleep(2_500)
+      return { result: READ, text: 'x' }
+    })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const read = $.tool.call({ tool: 'Read', file_path: '/work/src/app.py' })
+    await clock.advance(2_500)
+    await read
+    await $.tool.call({ tool: 'Bash', command: 'ls src', description: 'list' })
+    await clock.settle()
+    await $.turn.complete(DONE)
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^${at(T0)}  read\\s+Read\\s+src/app\\.py · 2\\.5s$`) })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^${at(T0 + 2_500)}  \\w+\\s+Bash\\s+ls src$`) })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('the turn header says when the turn started and, once it settled, how long it took', async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    mock.env(on, {})
+    standIn(on, ROWS)
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    // The main loop ran twice for this prompt: once for the work, once more for a hand-back.
+    await clock.set(T0 + 60_000)
+    await $.turn.complete({ ...DONE, durationMs: 60_000 })
+    await clock.set(T0 + 192_000)
+    await $.turn.complete({ ...DONE, durationMs: 30_000 })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^Turn 1 · ${at(T0)} · took 3m 12s$`) })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('while a backgrounded subagent has not handed back, the turn header says the turn is waiting on it', async ($, on) => {
+    mock.clock(on, { now: T0 + 5_000 })
+    mock.env(on, {})
+    standIn(on, e => (e.agentId ? [] : [
+      { role: 'user', text: 'look around', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [{ tool_use_id: 'a', tool: 'Agent', input: { description: 'x' }, agentId: 'a1', result: { status: 'async_launched', agentId: 'a1' }, text: 'launched' }],
+      },
+    ]))
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.turn.complete({ ...DONE, durationMs: 5_000 })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^Turn 1 · ${at(T0)} · waiting on a subagent$`) })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test("a subagent's run time comes from the transcript, so it shows with no probe times, as after a resume", async ($, on) => {
+    standIn(on, e => (e.agentId === 'a1' ? [] : [
+      { role: 'user', text: 'find the callers', toolUses: [] },
+      {
+        role: 'assistant',
+        text: '',
+        toolUses: [{ tool_use_id: 'a', tool: 'Agent', input: { description: 'Find callers', subagent_type: 'Explore' }, agentId: 'a1', durationMs: 75_000, text: 'ok' }],
+      },
+    ]))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount(TRACE)
+    expect(await ui.find({ type: 'Text', text: /^delegate\s+Agent\s+Find callers · 1m 15s$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Turn 1$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('the Ledger shows when each run started and how long the runner said it took', async ($, on) => {
+    let id = ''
+    const output = '...                                                                      [100%]\n3 passed in 4.20s\n'
+    const rows = () => [
+      { role: 'user', text: 'run the tests', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: id, tool: 'Bash', input: { command: 'pytest -q' }, text: output }] },
+    ]
+    const clock = mock.clock(on, { now: T0 })
+    mock.env(on, {})
+    standIn(on, rows, { status: '' })
+    on('tool.call', (_, e) => {
+      id = e.tool_use_id
+      return { result: { ...SHELL, stdout: output }, text: output }
+    })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.tool.call({ tool: 'Bash', command: 'pytest -q', description: 'tests' })
+    await clock.settle()
+    await $.turn.complete(DONE)
+    await $.command.run({ ...RUN, args: 'ledger' })
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-ledger', props: { title: 'Red/Green Ledger', ...PANE_PROPS } })
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^Turn 1 · ${at(T0)} · pytest · 3 passed · 4\\.2s$`) })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('the Autopsy shows when each compaction happened, at which turn, and how long after the one before', async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    mock.env(on, {})
+    standIn(on, ROWS)
+    on('session.compact', () => ({ messages: [{ role: 'user', text: 'This session is being continued from a previous conversation.', toolUses: [], handle: 's1' }], tokensBefore: 30_000, tokensAfter: 2_000 }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const compact = (trigger: 'manual' | 'auto') => $.session.compact({ trigger, messages: [{ role: 'user', text: 'go', toolUses: [], handle: 'h1' }] })
+    await compact('manual')
+    await clock.set(T0 + 47 * 60_000)
+    await compact('auto')
+    await $.command.run({ ...RUN, args: 'autopsy' })
+    const ui = await $.ui.mount({ plugin: 'field-guide', surface: 'terminal', component: 'Pane', requestId: 'field-guide-autopsy', props: { title: 'Compaction Autopsy', ...PANE_PROPS } })
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^Compaction 1 · ${at(T0)} · turn 1 · manual · 30\\.0k → 2\\.0k tokens`) })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^Compaction 2 · ${at(T0 + 47 * 60_000)}, 47m 00s after the previous · turn 1 · auto · `) })).toBeDefined()
+    await ui.unmount()
+  })
+})
