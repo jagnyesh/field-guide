@@ -52,6 +52,15 @@ if scenario == "changed-to-pass":
     check("test-changed-to-pass" in kinds, f"a failing test made to pass by editing only the test raises the flag ({kinds})")
     check("ended-red" not in kinds, f"no Ended red, since only already-failing tests remain ({kinds})")
 
+if scenario == "rewrite-keeps-skip":
+    check("Write" in tools, f"the test file was rewritten with Write ({tools})")
+    check("test-and-source-changed" in kinds and "test-changed-to-pass" not in kinds,
+          f"a Write that keeps the file's existing skip adds no marker, so a fix is the both-changed note ({kinds})")
+
+if scenario == "rewrite-adds-skip":
+    check("Write" in tools, f"the test file was rewritten with Write ({tools})")
+    check("test-changed-to-pass" in kinds, f"a Write that adds a skip is seen against the file it replaced, so it raises the flag ({kinds})")
+
 if scenario == "vitest":
     check(len(runs) == 1 and runs[0]["runner"] == "vitest", f"one vitest run was read ({[r['runner'] for r in runs]})")
     check(bool(runs) and (runs[0]["passed"], runs[0]["failed"]) == (2, 2), f"counts match the JS fixture ({runs[0] if runs else None})")
