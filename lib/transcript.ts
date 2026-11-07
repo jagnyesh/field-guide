@@ -4,7 +4,7 @@ import { asBuiltIn, shortName } from './mcp'
 import { addedMockTargets } from './mocks'
 import { relativeTo } from './paths'
 import { guessWrites, shellReads } from './shelledit'
-import { parseTestRun } from './testrun'
+import { parseTestRun, reportedMs } from './testrun'
 import type { TestRun } from './testrun'
 
 export type ToolUse = {
@@ -16,6 +16,8 @@ export type ToolUse = {
   readonly agentId?: string
   // The tool's typed record; for Agent, `status` says whether it ran or was backgrounded.
   readonly result?: unknown
+  // On an Agent tool use that ran to completion: how long its subagent ran, as stored.
+  readonly durationMs?: number
 }
 
 export type TranscriptMessage = {
@@ -39,6 +41,8 @@ export type Step = {
   // On a verify step: what it verified, and for a test runner the run as read from its output.
   readonly verification?: Verification
   readonly run?: TestRun
+  // How long the runner said that run took, read from its output.
+  readonly runMs?: number
   // A test command whose output could not be read: it proves nothing, either way.
   readonly unreadableRun?: true
   // An edit that adds a skip, expected-failure, or run-only marker to a test.
@@ -55,6 +59,10 @@ export type Step = {
   readonly children?: readonly Step[]
   // An Agent step whose subagent was backgrounded: the turn waits for its hand-back.
   readonly isBackground?: true
+  // When the call was made and how long until it was answered, in $.clock.now()'s milliseconds:
+  // the Live Probe's, so none after a resume; an Agent step's length is the transcript's first.
+  readonly startedAt?: number
+  readonly durationMs?: number
 }
 
 // A subagent's transcript by its id, as the engine keeps it; undefined when it can't be read.
@@ -65,6 +73,9 @@ export type ProbeFacts = {
   readonly isReadOnly?: boolean
   // Set when the probe read the repository's change list after the call.
   readonly shellEdits?: readonly string[]
+  // When the call was made, and how long until it was answered (a permission prompt included).
+  readonly startedAt?: number
+  readonly durationMs?: number
 }
 
 export type ProbeLookup = (toolUseId: string) => ProbeFacts | undefined
@@ -103,12 +114,14 @@ function toolUses(messages: readonly TranscriptMessage[]): ToolUse[] {
 }
 
 // A test command whose output can't be read proves nothing the ledger can show, so it is a plain run.
-function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run' | 'unreadableRun'> | null {
+function verifyFacts(use: ToolUse): Pick<Step, 'kind' | 'verification' | 'run' | 'runMs' | 'unreadableRun'> | null {
   if (use.tool !== 'Bash' || typeof use.input.command !== 'string') return null
   const verification = commandVerification(use.input.command)
   if (verification !== 'tested') return verification ? { kind: 'verify', verification } : null
   const run = parseTestRun(use.input.command, use.text ?? '')
-  return run ? { kind: 'verify', verification, run } : { kind: 'run', unreadableRun: true as const }
+  if (!run) return { kind: 'run', unreadableRun: true as const }
+  const runMs = reportedMs(run.runner, use.text ?? '')
+  return { kind: 'verify', verification, run, ...(runMs !== undefined ? { runMs } : {}) }
 }
 
 const PATH_FIELD: Readonly<Record<string, string>> = {
@@ -181,6 +194,7 @@ function toStep(original: ToolUse, ctx: Context, agentId?: string, expanding: Re
   // A command that changed files is an edit, unless it also verified: then the verify is what it did last.
   const kind = shellEdit && done !== 'verify' ? 'edit' : done
   const path = pathOf(use)
+  const durationMs = original.durationMs ?? facts?.durationMs
   const step: Step = {
     id: use.tool_use_id,
     tool: shortName(original.tool),
@@ -197,6 +211,8 @@ function toStep(original: ToolUse, ctx: Context, agentId?: string, expanding: Re
     isError: use.isError === true,
     resultSize: use.text?.length ?? 0,
     ...(agentId ? { agentId } : {}),
+    ...(facts?.startedAt !== undefined ? { startedAt: facts.startedAt } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
   }
   if (step.kind !== 'delegate' || !use.agentId) return step
   const rows = expanding.has(use.agentId) ? undefined : ctx.subagents(use.agentId)

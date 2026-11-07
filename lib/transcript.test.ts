@@ -186,6 +186,18 @@ describe('Transcript Reader', () => {
     expect([cat(true), cat(false)]).toEqual(['read', 'run'])
   })
 
+  test("a step's start and length come from the probe; an Agent step's length from the transcript first", async () => {
+    const agent: ToolUse = { ...use('a', 'Agent', { description: 'look', subagent_type: 'Explore' }), agentId: 'a1', durationMs: 75_000 }
+    const [turn] = buildTimeline(
+      [prompt('go'), reply('', [use('r', 'Read', { file_path: 'a.txt' }), use('p', 'Bash', { command: 'pytest -q' }, OUTPUT.quiet), agent])],
+      () => [],
+      id => (id === 'r' ? { startedAt: 1_000, durationMs: 40 } : id === 'a' ? { startedAt: 2_000, durationMs: 60_000 } : undefined),
+    )
+    expect(turn.steps.map(s => [s.startedAt, s.durationMs])).toEqual([[1_000, 40], [undefined, undefined], [2_000, 75_000]])
+    // How long the runner said the tests took, read from its output, which a resume keeps.
+    expect(turn.steps[1].runMs).toBe(10)
+  })
+
   test('summaries show paths relative to the session folder, before they are cut to length', async () => {
     const long = '/srv/some/very/long/session/folder/that/goes/on/and/on/for/a/while/fixture'
     const [turn] = buildTimeline(

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { OUTPUT } from './fixtures/pytest'
 import { OUTPUT as VITEST } from './fixtures/vitest'
 import { OUTPUT as JEST } from './fixtures/jest'
-import { parseTestRun } from './testrun'
+import { parseTestRun, reportedMs } from './testrun'
 
 const PYTEST = '.venv/bin/python -m pytest -q'
 
@@ -106,3 +106,20 @@ describe('Test Output Parser: jest', () => {
   })
 })
 
+
+describe('Test Output Parser: duration', () => {
+  test('reads how long the run took as each runner reports it, in milliseconds', async () => {
+    expect(reportedMs('pytest', OUTPUT.quiet)).toBe(10)
+    expect(reportedMs('pytest', OUTPUT.default)).toBe(30)
+    expect(reportedMs('pytest', '3 passed in 65.43s (0:01:05)')).toBe(65_430)
+    expect(reportedMs('vitest', VITEST['all-pass'])).toBe(174)
+    expect(reportedMs('vitest', '   Duration  2.31s (transform 8ms, setup 0ms)')).toBe(2_310)
+    expect(reportedMs('jest', JEST['all-pass'])).toBe(115)
+    expect(reportedMs('jest', JEST.fail)).toBe(128)
+  })
+
+  test('output with no duration line has no duration', async () => {
+    expect(reportedMs('pytest', 'FAILED tests/test_x.py::test_y')).toBeUndefined()
+    expect(reportedMs('vitest', OUTPUT.quiet)).toBeUndefined()
+  })
+})

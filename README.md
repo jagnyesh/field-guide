@@ -46,10 +46,10 @@ If your settings deny the Read tool, as some lean-ctx setups do, Claude can't us
 
 | View | Opens with | Shows |
 |---|---|---|
-| Loop Trace | `/guide trace` | The latest turn's steps (read, search, edit, run, verify, delegate), subagent steps nested under the Agent step that started them, whether the turn was Tested, Checked, or not verified after its last edit, the turn's flags, and a Reading List for each file it edited. |
-| Red/Green Ledger | `/guide ledger` | Every test run in order (pytest, vitest, jest), failing tests by id, tests that were already failing at the session's first run marked as such, and the Ledger's flags and notes. |
+| Loop Trace | `/guide trace` | The latest turn's steps (read, search, edit, run, verify, delegate) with the time each started and, past a second, how long it took, subagent steps nested under the Agent step that started them, when the turn started and how long it took, whether the turn was Tested, Checked, or not verified after its last edit, the turn's flags, and a Reading List for each file it edited. |
+| Red/Green Ledger | `/guide ledger` | Every test run in order (pytest, vitest, jest) with when it started and how long the runner said it took, failing tests by id, tests that were already failing at the session's first run marked as such, and the Ledger's flags and notes. |
 | Context X-ray | `/guide xray` | The fixed load every request pays (system prompt, tools, MCP servers, memory files and what they import, system-prompt sections), the last turn's measured growth split across its messages, and what the estimates leave over. |
-| Compaction Autopsy | `/guide autopsy` | Each compaction's trigger, tokens before and after, how many messages were kept word for word, and the latest summary. |
+| Compaction Autopsy | `/guide autopsy` | When each compaction happened and how long after the one before, the turn it came in, its trigger, tokens before and after, how many messages were kept word for word, and the latest summary. |
 
 One line above the prompt shows a flag once a turn has settled, stated as what happened, otherwise the last test result and how full the context is. It gives way to anything else drawn there (another mod, a survey) and moves a flag to the status line instead. A flag at the end of a turn also shows as a toast. Each flag's view has a **Tell Claude** button that fills an editable prompt; nothing is sent until you send it. The prompt reports the flag as information, not a request to change approach, since a flag can't tell whether what happened was intended.
 
@@ -93,6 +93,7 @@ Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on
 - pytest's quiet output names only failing tests, so "passed" means a later run that covered the test no longer lists it.
 - A change someone else makes inside a shell call's time window is credited to that call.
 - Turn growth needs two readings in one process; after a resume it starts again from the next turn.
+- Step and turn times come from the Live Probe, so steps from before a resume show none. A subagent's run time and a test run's length are read from the transcript and survive one. A step's time runs from the call until its answer, so it includes any wait on a permission prompt.
 - Terminal only; desktop, VS Code, and mobile surfaces are untested.
 - No hotkeys in the MVP: views open with `/guide`. The terminal arms hotkeys only on buttons, and the band has none.
 

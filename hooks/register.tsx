@@ -15,8 +15,9 @@ import type { BreakdownInput, FixedLoad } from '../lib/xray'
 import { readingLists } from '../lib/readinglist'
 import type { EarlierReads, ReadingEntry } from '../lib/readinglist'
 import { creditChanges, parseStatus } from '../lib/shelledit'
-import type { CompactionMemory, EarlierRead, ProbeRecord } from '../types'
-import { buildTimeline, changedFiles, flatSteps, startedAgents, verificationOf } from '../lib/transcript'
+import { clockTime, stamp, took } from '../lib/time'
+import type { CallTiming, CompactionMemory, EarlierRead, ProbeRecord, TurnTiming } from '../types'
+import { buildTimeline, changedFiles, flatSteps, isDeveloperPrompt, startedAgents, verificationOf } from '../lib/transcript'
 import type { Step, TranscriptMessage, Turn } from '../lib/transcript'
 import type { TestRun } from '../lib/testrun'
 
@@ -63,6 +64,14 @@ const toasted = atom({ plugin: 'field-guide', key: 'toasted' } as const, [] as s
 const acknowledged = atom({ plugin: 'field-guide', key: 'acknowledged' } as const, [] as string[])
 // The Live Probe's facts per shell call, which the transcript doesn't keep (ADR 0002).
 const probe = atom({ plugin: 'field-guide', key: 'probe' } as const, {} as Record<string, ProbeRecord>)
+// Every call's time, which the transcript doesn't keep either. Apart from the probe's facts, so
+// recording every tool never pushes a shell call's facts out under the probe's limit.
+const timing = atom({ plugin: 'field-guide', key: 'timing' } as const, {} as Record<string, CallTiming>)
+// Each turn's start and end, keyed as flags are: turn numbers start again after a compaction.
+const turnTiming = atom({ plugin: 'field-guide', key: 'turnTiming' } as const, {} as Record<string, TurnTiming>)
+let turnTimes: Record<string, TurnTiming> = {}
+const TIMING_KEEP = 1_000
+const TURN_TIMING_KEEP = 200
 const EMPTY_MEMORY: CompactionMemory = { compactions: [], earlierReads: [], reattached: [], window: 'closed' }
 const MEMORY_PREFIX = 'compaction:'
 const MEMORY_SESSIONS = 20
@@ -90,6 +99,7 @@ async function rebuild($: EngineInterface): Promise<void> {
   const memory = await loadMemory($)
   earlier = { reads: memory.earlierReads, reattached: memory.reattached }
   compactionCount = memory.compactions.length
+  turnTimes = await read($, turnTiming)
   summaryText = main.find(row => row.role === 'user' && SUMMARY_START.test(row.text.trimStart()))?.text ?? null
   const latest = timeline[timeline.length - 1]
   latestSettled = latest?.isSettled ?? true
@@ -111,7 +121,34 @@ async function readTimeline($: EngineInterface): Promise<{ main: TranscriptMessa
     pending.push(...startedAgents(rows))
   }
   const facts = await read($, probe)
-  return { main, turns: buildTimeline(main, agentId => subagents.get(agentId), id => facts[id], sessionCwd) }
+  const times = await read($, timing)
+  const lookup = (id: string) => (facts[id] || times[id] ? { ...facts[id], ...times[id] } : undefined)
+  return { main, turns: buildTimeline(main, agentId => subagents.get(agentId), lookup, sessionCwd) }
+}
+
+// The clock, or null when it can't be read: a time is never worth failing a hook over.
+async function now($: EngineInterface): Promise<number | null> {
+  try {
+    return await $.clock.now()
+  } catch {
+    return null
+  }
+}
+
+function turnKey(turn: Turn): string {
+  return `${compactionCount}:${turn.index}`
+}
+
+// A turn's window from the engine's own length for each main-loop turn: a hand-back extends it.
+async function recordTurnTime($: EngineInterface, durationMs: number): Promise<void> {
+  const latest = timeline[timeline.length - 1]
+  const end = await now($)
+  if (!latest || end === null) return
+  const key = turnKey(latest)
+  const start = end - durationMs
+  await update($, turnTiming, all => capped(all, key, { startedAt: Math.min(all[key]?.startedAt ?? start, start), endedAt: end }, TURN_TIMING_KEEP))
+  turnTimes = await read($, turnTiming)
+  $.ui.invalidate('ui.render')
 }
 
 // A commit or push is where an unchecked edit leaves the session, so it is checked mid-turn as well
@@ -327,16 +364,33 @@ function shellEditLabel(step: Step): string {
 }
 
 function stepLine(step: Step): string {
-  return `${step.isError ? '✗ ' : ''}${step.kind.padEnd(8)} ${step.tool}  ${step.summary}`.trimEnd() + shellEditLabel(step)
+  const length = took(step.durationMs)
+  return `${step.isError ? '✗ ' : ''}${step.kind.padEnd(8)} ${step.tool}  ${step.summary}`.trimEnd() + (length ? ` · ${length}` : '') + shellEditLabel(step)
+}
+
+// The start-time column, kept aligned for a step the probe has no time for; none when no step has one.
+function timeColumn(step: Step, isTimed: boolean): string {
+  if (!isTimed) return ''
+  return `${step.startedAt !== undefined ? clockTime(step.startedAt) : ' '.repeat(8)}  `
+}
+
+function turnHeader(turn: Turn): string {
+  const times = turnTimes[turnKey(turn)]
+  if (!times) return `Turn ${turn.index + 1}`
+  const tail = turn.isSettled ? `took ${took(times.endedAt - times.startedAt) || 'under a second'}` : 'waiting on a subagent'
+  return `Turn ${turn.index + 1} · ${clockTime(times.startedAt)} · ${tail}`
+}
+
+// The newest `keep` entries: an object keeps its keys in the order they were first set.
+function capped<T>(all: Readonly<Record<string, T>>, id: string, value: T, keep: number): Record<string, T> {
+  const next = { ...all, [id]: value }
+  const ids = Object.keys(next)
+  for (const old of ids.slice(0, Math.max(0, ids.length - keep))) delete next[old]
+  return next
 }
 
 async function remember($: EngineInterface, id: string, record: ProbeRecord): Promise<void> {
-  await update($, probe, all => {
-    const next = { ...all, [id]: record }
-    const ids = Object.keys(next)
-    for (const old of ids.slice(0, Math.max(0, ids.length - PROBE_KEEP))) delete next[old]
-    return next
-  })
+  await update($, probe, all => capped(all, id, record, PROBE_KEEP))
 }
 
 // Runs after the call has returned its result, so the snapshot never delays it. The index lock
@@ -416,25 +470,26 @@ export const register: Register = (on, options) => {
     return result
   })
 
-  // The Live Probe: watch-only, the call and its result pass through untouched. It follows the
-  // built-in shell and MCP tools that stand in for it (lean-ctx's ctx_shell, for one).
+  // The Live Probe: watch-only, the call and its result pass through untouched. It times every
+  // call, and follows the built-in shell and MCP tools that stand in for it (lean-ctx's ctx_shell, for one).
   on('tool.call', async ($, e, next) => {
+    const start = await now($)
     const standIn = e.tool.startsWith('mcp__') ? asBuiltIn({ tool_use_id: e.tool_use_id, tool: e.tool, input: e as Record<string, unknown> }) : null
-    if (e.tool !== 'Bash' && standIn?.tool !== 'Bash') return next(e)
-    const command = String((standIn?.input ?? (e as Record<string, unknown>)).command ?? '')
-    const action = gitPublish(command)
-    const start = await $.clock.now()
+    const isShell = e.tool === 'Bash' || standIn?.tool === 'Bash'
+    const command = isShell ? String((standIn?.input ?? (e as Record<string, unknown>)).command ?? '') : ''
+    const action = isShell ? gitPublish(command) : null
     const result = await next(e)
     try {
-      if (result.deny !== undefined) return result
+      const end = await now($)
+      if (start !== null && end !== null) await update($, timing, all => capped(all, e.tool_use_id, { startedAt: start, durationMs: end - start }, TIMING_KEEP))
+      if (!isShell || result.deny !== undefined) return result
       // Only once it ran: the permission prompt is inside next(e), and a denied or failed commit left nothing.
       if (action && !result.isError) void $.clock.after(0, () => void checkPublish($, action, command).catch(err => fail($, 'publish check', err)))
       if (result.isReadOnly) {
         await remember($, e.tool_use_id, { isReadOnly: true })
         return result
       }
-      const end = await $.clock.now()
-      void $.clock.after(0, () => void snapshot($, e.tool_use_id, start, end))
+      if (start !== null && end !== null) void $.clock.after(0, () => void snapshot($, e.tool_use_id, start, end))
     } catch (err) {
       fail($, 'tool.call', err)
     }
@@ -448,11 +503,15 @@ export const register: Register = (on, options) => {
       if (e.agentId || e.trigger === 'precompute') return result
       const record = diffCompaction(e, result)
       if (!record) return result
+      // The turn it came in, numbered as Loop Trace numbered it then: from the transcript being compacted.
+      const turn = e.messages.filter(message => isDeveloperPrompt(message)).length
+      const at = await now($)
+      const stamped = { ...record, ...(at !== null ? { at } : {}), ...(turn > 0 ? { turn } : {}) }
       const reads = readsSoFar()
       await saveMemory($, memory => {
         const merged = [...memory.earlierReads]
         for (const entry of reads) if (!merged.some(r => r.path === entry.path)) merged.push(entry)
-        return { compactions: [...memory.compactions, record].slice(-50), earlierReads: merged.slice(-500), reattached: [], window: 'pending' }
+        return { compactions: [...memory.compactions, stamped].slice(-50), earlierReads: merged.slice(-500), reattached: [], window: 'pending' }
       })
     } catch (err) {
       fail($, 'session.compact', err)
@@ -564,11 +623,20 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
+    const current = await now($)
+    // Records an earlier version stored have no time or turn, so those parts are left out.
+    const when = (i: number) => {
+      const at = records[i].at
+      if (at === undefined) return ''
+      const before = records[i - 1]?.at
+      const gap = before !== undefined ? `, ${took(at - before) || 'under a second'} after the previous` : ''
+      return ` · ${stamp(at, current ?? at)}${gap}`
+    }
     return (
       <Box flexDirection="column">
         {records.map((r, i) => (
           <Text key={`compaction:${i}`}>
-            {`Compaction ${i + 1} · ${r.trigger} · ${tokens(r.tokensBefore)} → ${tokens(r.tokensAfter)} tokens · ${r.kept} kept word for word · ${r.summarised} summarised`}
+            {`Compaction ${i + 1}${when(i)}${r.turn !== undefined ? ` · turn ${r.turn}` : ''} · ${r.trigger} · ${tokens(r.tokensBefore)} → ${tokens(r.tokensAfter)} tokens · ${r.kept} kept word for word · ${r.summarised} summarised`}
           </Text>
         ))}
         {summaryText && <Text bold>Latest summary</Text>}
@@ -587,6 +655,7 @@ export const register: Register = (on, options) => {
         await toastNewFlags($)
         await logDebug($)
         if ((await loadMemory($)).window === 'in-turn') await saveMemory($, m => ({ ...m, window: 'closed' }))
+        await recordTurnTime($, e.durationMs)
       }
     } catch (err) {
       fail($, 'turn.complete', err)
@@ -644,7 +713,7 @@ export const register: Register = (on, options) => {
     )
   })
 
-  on('ui.render', { component: 'Pane', requestId: LEDGER }, ($, e) => {
+  on('ui.render', { component: 'Pane', requestId: LEDGER }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const runs = timeline.flatMap(turn => flatSteps(turn).flatMap(step => (step.run ? [{ turn, step, run: step.run }] : [])))
     if (runs.length === 0) {
@@ -655,12 +724,14 @@ export const register: Register = (on, options) => {
       )
     }
     const already = alreadyFailing(timeline)
+    // A session can run past midnight, so a run from another day carries its date.
+    const current = await now($)
     return (
       <Box flexDirection="column">
         {findingList($, e, 'ledger')}
         {runs.flatMap(({ turn, step, run }) => [
           <Text key={step.id} color={run.failed + run.errors > 0 ? 'red' : 'green'}>
-            {`Turn ${turn.index + 1} · ${run.runner} · ${runCounts(run)}`}
+            {`Turn ${turn.index + 1}${step.startedAt !== undefined ? ` · ${stamp(step.startedAt, current ?? step.startedAt)}` : ''} · ${run.runner} · ${runCounts(run)}${took(step.runMs) ? ` · ${took(step.runMs)}` : ''}`}
           </Text>,
           ...run.failingIds.map(id =>
             already.get(run.runner)?.has(id) ? (
@@ -688,16 +759,17 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
+    const isTimed = flatSteps(turn).some(step => step.startedAt !== undefined)
     return (
       <Box flexDirection="column">
-        <Text bold>Turn {turn.index + 1}</Text>
+        <Text bold>{turnHeader(turn)}</Text>
         {turn.steps.flatMap(step => [
           <Text key={step.id} color={step.isError ? 'red' : undefined}>
-            {stepLine(step)}
+            {timeColumn(step, isTimed) + stepLine(step)}
           </Text>,
           ...(step.children ?? []).map(child => (
             <Text key={child.id} dimColor color={child.isError ? 'red' : undefined}>
-              {`  ↳ ${step.agentType} › ${stepLine(child)}`}
+              {`${timeColumn(child, isTimed)}  ↳ ${step.agentType} › ${stepLine(child)}`}
             </Text>
           )),
         ])}
