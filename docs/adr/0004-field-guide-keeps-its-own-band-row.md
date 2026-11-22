@@ -10,6 +10,8 @@ This rules out withdrawing Field Guide's row because another mod has one, and an
 
 The test for this behaviour asserts what builds with one row per plugin do: both rows are drawn and the **Flag** stays in the band. It fails on 2.1.316 and earlier, so those builds are no longer among the ones the suite is run on, and the give-way path stays in the code without a test. That path is reached on builds up to 2.1.316, and on later builds only when another mod answers over Field Guide's row. Decided by J on 2026-11-22 (#40).
 
+The suite is now run on 2.1.330, whose declarations require an `isCollapsed` prop on the band that the tests did not pass. That type-check fix lands with this change, so that `scripts/check.sh` passes on the build the README names as tested. Decided by J on 2026-11-22 (#40).
+
 ## Considered Options
 
 - A test that branches on what the build reports and asserts the matching behaviour. Rejected: its expectation would depend on the host, to cover a path reached on builds up to 2.1.316, and on later builds only when another mod answers over Field Guide's row.
