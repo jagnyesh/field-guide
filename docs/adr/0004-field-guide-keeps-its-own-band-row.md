@@ -12,6 +12,8 @@ The test for this behaviour asserts what builds with one row per plugin do: both
 
 The suite is now run on 2.1.330, whose declarations require an `isCollapsed` prop on the band that the tests did not pass. That type-check fix lands with this change, so that `scripts/check.sh` passes on the build the README names as tested. Decided by J on 2026-11-22 (#40).
 
+Correcting the band test removed the only check that a **Flag** reaches the status line. A new test covers that fallback where it still applies on every build: while a survey holds the band. It tests existing behaviour and changes no code. Decided by J on 2026-11-22 (#40).
+
 ## Considered Options
 
 - A test that branches on what the build reports and asserts the matching behaviour. Rejected: its expectation would depend on the host, to cover a path reached on builds up to 2.1.316, and on later builds only when another mod answers over Field Guide's row.
