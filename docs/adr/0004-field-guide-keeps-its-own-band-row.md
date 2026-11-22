@@ -6,13 +6,15 @@ status: accepted
 
 From Claude Code 2.1.323 the band above the prompt is one row per plugin, stacked by the engine; before that it was one slot shared by a chain of hooks. Field Guide gave way to another mod there so that a teaching mod never crowded out a safety mod. Rows no longer collide, so on builds with one row per plugin Field Guide draws its row whether or not another mod has one, and a **Flag** stays in the band instead of moving to the status line. It still gives way to a survey, and on builds up to 2.1.316, where the slot is shared, it still gives way to another mod as before. We give up the README's blanket promise that the band gives way to anything else drawn there. In return, Field Guide adds no hook that can touch another mod's row. Decided by J on 2026-11-22 (#40).
 
-This rules out withdrawing Field Guide's row because another mod has one, and any `AbovePromptList` hook in Field Guide.
+This rules out withdrawing Field Guide's row because another mod has a row of its own, and any `AbovePromptList` hook in Field Guide.
 
 The test for this behaviour asserts what builds with one row per plugin do: both rows are drawn and the **Flag** stays in the band. It fails on 2.1.316 and earlier, so those builds are no longer among the ones the suite is run on, and the give-way path stays in the code without a test. That path is reached on builds up to 2.1.316, and on later builds only when another mod answers over Field Guide's row. Decided by J on 2026-11-22 (#40).
 
 The suite is now run on 2.1.330, whose declarations require an `isCollapsed` prop on the band that the tests did not pass. That type-check fix lands with this change, so that `scripts/check.sh` passes on the build the README names as tested. Decided by J on 2026-11-22 (#40).
 
 Correcting the band test removed the only check that a **Flag** reaches the status line. A new test covers that fallback where it still applies on every build: while a survey holds the band. It tests existing behaviour and changes no code. Decided by J on 2026-11-22 (#40).
+
+On builds with one row per plugin another mod can still answer over Field Guide's row, with an `AbovePrompt` hook whose matcher names Field Guide's plugin or `"*"`. Passing then returns that mod's tree, and Field Guide gives way and moves the **Flag** to the status line, as it does on older builds. That stays as it is: a mod that answers over the row is asking for the space, and giving way to it is what the old rule meant. Keeping its own row applies when the other mod draws a row of its own. Decided by J on 2026-11-22 (#40).
 
 ## Considered Options
 
@@ -24,4 +26,4 @@ Correcting the band test removed the only check that a **Flag** reaches the stat
 
 - When the band is full the engine drops the rows that no longer fit, kept from the top. Which mod's row is dropped depends on the chain's order, and that order has not been observed in a live session.
 - The stacking was seen in `claude plugin test` and in the 2.1.330 type declarations, not yet on screen with two mods loaded (#32).
-- Observed, not decided: on 2.1.323 and 2.1.330 another mod can answer over Field Guide's row with an `AbovePrompt` hook whose matcher names Field Guide's plugin or `"*"`. Passing then returns that mod's tree, and Field Guide gives way and moves the **Flag** to the status line. Seen in `claude plugin test` and the 2.1.330 declarations, not live, and no test covers it. Whether this case should count as giving way to another mod is an open question for J.
+- Another mod answering over Field Guide's row was seen in `claude plugin test` on 2.1.323 and 2.1.330 and in the 2.1.330 declarations, not live, and no test covers it.
