@@ -8,7 +8,11 @@ From Claude Code 2.1.323 the band above the prompt is one row per plugin, stacke
 
 This rules out withdrawing Field Guide's row because another mod has one, and any `AbovePromptList` hook in Field Guide.
 
+The test for this behaviour asserts what builds with one row per plugin do: both rows are drawn and the **Flag** stays in the band. It fails on 2.1.316 and earlier, so those builds are no longer among the ones the suite is run on, and the shared-slot path stays in the code without a test. Decided by J on 2026-11-22 (#40).
+
 ## Considered Options
+
+- A test that branches on what the build reports and asserts the matching behaviour. Rejected: its expectation would depend on the host, to cover a path only older builds reach.
 
 - Hook `AbovePromptList`, leave Field Guide's row out when another plugin has one, and move the **Flag** to the status line. Rejected: the hook sees and can hide every mod's row, so a bug in it could hide a safety mod's row, the harm the old rule existed to prevent.
 
