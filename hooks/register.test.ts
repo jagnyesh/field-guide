@@ -185,14 +185,14 @@ describe('Loop Trace pane', () => {
     await band.unmount()
   })
 
-  test('with another plugin drawing in the band, Field Guide draws nothing there and the flag moves to the status line', async ($, on) => {
+  test('with another plugin drawing in the band, Field Guide keeps its own row there and the flag stays out of the status line', async ($, on) => {
     const other = { type: 'Text', children: ['another mod is holding a command'] }
     const engine = standIn(on, EDITED, { band: other })
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
     expect(await band.find({ type: 'Text', text: /another mod is holding a command/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
-    expect(engine.statuses.some(text => text?.includes('No test or check ran since the last edit'))).toBe(true)
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
+    expect(engine.statuses.some(text => text?.includes('No test or check ran since the last edit'))).toBe(false)
     await band.unmount()
   })
 
