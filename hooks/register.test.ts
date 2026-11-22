@@ -153,7 +153,7 @@ describe('Loop Trace pane', () => {
     plugin: 'field-guide',
     surface: 'terminal' as const,
     component: 'AbovePrompt' as const,
-    props: { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns, scroll: { offset: 0, bodyRows: 4 }, view: {} },
+    props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 4, bodyColumns, scroll: { offset: 0, bodyRows: 4 }, view: {} },
   })
   const EDITED = [
     { role: 'user', text: 'change the limit', toolUses: [] },
@@ -185,14 +185,14 @@ describe('Loop Trace pane', () => {
     await band.unmount()
   })
 
-  test('with another plugin drawing in the band, Field Guide draws nothing there and the flag moves to the status line', async ($, on) => {
+  test('with another plugin drawing in the band, Field Guide keeps its own row there and the flag stays out of the status line', async ($, on) => {
     const other = { type: 'Text', children: ['another mod is holding a command'] }
     const engine = standIn(on, EDITED, { band: other })
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
     const band = await $.ui.mount(BAND())
     expect(await band.find({ type: 'Text', text: /another mod is holding a command/ })).toBeDefined()
-    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
-    expect(engine.statuses.some(text => text?.includes('No test or check ran since the last edit'))).toBe(true)
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
+    expect(engine.statuses.some(text => text?.includes('No test or check ran since the last edit'))).toBe(false)
     await band.unmount()
   })
 
@@ -202,6 +202,21 @@ describe('Loop Trace pane', () => {
     const survey = BAND()
     const band = await $.ui.mount({ ...survey, props: { ...survey.props, hasSurvey: true } })
     expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
+    await band.unmount()
+  })
+
+  test('while a survey holds the band, the flag goes to the status line; once the survey goes, it is back in the band and the status line is cleared', async ($, on) => {
+    const engine = standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const survey = BAND()
+    const held = await $.ui.mount({ ...survey, props: { ...survey.props, hasSurvey: true } })
+    expect(await held.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
+    expect(engine.statuses.at(-1)).toMatch(/No test or check ran since the last edit/)
+    await held.unmount()
+    const raised = engine.statuses.length
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
+    expect(engine.statuses.slice(raised)).toEqual([undefined])
     await band.unmount()
   })
 

@@ -6,7 +6,7 @@ Design notes: [PRD](docs/PRD.md) · [glossary](CONTEXT.md) · [ADRs](docs/adr/).
 
 ## Install
 
-Needs Claude Code 2.1.287 or later (mods load by default). Built and tested on 2.1.303.
+Needs Claude Code 2.1.287 or later (mods load by default). The live checks were made on 2.1.303, and the stand-in suite (`scripts/check.sh`) is run on 2.1.330. See "How it was checked".
 
 ```bash
 claude plugin marketplace add jagnyesh/field-guide
@@ -51,7 +51,7 @@ If your settings deny the Read tool, as some lean-ctx setups do, Claude can't us
 | Context X-ray | `/guide xray` | The fixed load every request pays (system prompt, tools, MCP servers, memory files and what they import, system-prompt sections), the last turn's measured growth split across its messages, and what the estimates leave over. |
 | Compaction Autopsy | `/guide autopsy` | When each compaction happened and how long after the one before, the turn it came in, its trigger, tokens before and after, how many messages were kept word for word, and the latest summary. |
 
-One line above the prompt shows a flag once a turn has settled, stated as what happened, otherwise the last test result and how full the context is. It gives way to anything else drawn there (another mod, a survey) and moves a flag to the status line instead. A flag at the end of a turn also shows as a toast. Each flag's view has a **Tell Claude** button that fills an editable prompt; nothing is sent until you send it. The prompt reports the flag as information, not a request to change approach, since a flag can't tell whether what happened was intended.
+One line above the prompt shows a flag once a turn has settled, stated as what happened, otherwise the last test result and how full the context is. It gives way to a survey and moves a flag to the status line instead. From Claude Code 2.1.323 each mod has its own row in the band, so Field Guide keeps its row beside another mod's, and gives way only to a mod that answers for Field Guide's own row (seen in `claude plugin test`, not yet in a live session; #32). On builds up to 2.1.322, where mods share one slot there, it gives way to another mod too. A flag at the end of a turn also shows as a toast. Each flag's view has a **Tell Claude** button that fills an editable prompt; nothing is sent until you send it. The prompt reports the flag as information, not a request to change approach, since a flag can't tell whether what happened was intended.
 
 ### Flags and notes
 
@@ -79,13 +79,13 @@ No text from a tool result or a message leaves the transcript ([ADR 0003](docs/a
 
 ## How it was checked
 
-Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on.
+The first column is what a behaviour rests on, and the build it was checked on. The live checks used Claude Code 2.1.303, Haiku, on macOS. The stand-in suite was run on Linux.
 
 | Checked | Behaviours |
 |---|---|
-| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass (also through a Write that rewrites the test file), Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
-| Live, interactive (tmux at 80 and 144 columns) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
-| Stand-in host only (`claude plugin test`) | Rendering of every pane and the band, giving way in the band, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
+| Live, headless (`scripts/headless.sh`, real engine, one run each; 2.1.303) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass (also through a Write that rewrites the test file), Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
+| Live, interactive (tmux at 80 and 144 columns; 2.1.303) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
+| Stand-in host only (`claude plugin test`; 2.1.330, Linux) | Rendering of every pane and the band, giving way to a survey in the band with a flag moved to the status line, keeping its own band row beside another mod's, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
 
 ## Limitations
 
