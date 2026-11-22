@@ -83,7 +83,7 @@ A **Flag** is raised in a one-line band above the prompt, shown as a toast at th
 47. As a new developer, I want each flag to say in one sentence why it fired, so that I learn the principle.
 48. As a new developer, I want flags kept from the model, so that the agent can't learn to avoid the detector, for example by not running tests.
 49. As a new developer, I want to hand a flag to the agent as my own visible prompt, so that I decide when the agent gets involved.
-50. As a developer who also uses a safety mod, I want Field Guide to keep to its own row in the band and add no hook that touches another mod's row, so that Field Guide's own hooks can never hide or reorder a safety mod's row.
+50. As a developer who also uses a safety mod, I want Field Guide to keep to its own row in the band and add no hook that touches another mod's row, so that Field Guide's own hooks never remove or reorder a safety mod's row. Its row still takes space, so a row below it can be pushed out of a crowded band (ADR 0004).
 51. As a new developer, I want a flag that can't show in the band moved to the status line, so that giving way never hides it.
 52. As a new developer, I want one slash command that opens any view, so that the views are easy to reach. (Hotkeys from the band are out of scope for the MVP: the terminal arms hotkeys only on buttons, and the band has none.)
 53. As a new developer in a narrow terminal, I want views to open when I ask for them at any width, so that I'm not locked out.
