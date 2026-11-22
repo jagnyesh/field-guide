@@ -68,6 +68,7 @@ When J corrects a session, add one dated line to this file that states the rule,
 - **Medium:** the band, toasts, panes and views; other `lib/*.ts`; `scripts/**`.
 - **Low:** `docs/**`, `README.md`, glossary wording in `CONTEXT.md`, tests outside `lib/fixtures/**`, refactors with no behavior change outside the High paths.
 - **Decision log:** one file per decision in `docs/adr/`. A new term goes in `CONTEXT.md` first.
-- **Tests:** `scripts/check.sh` (type check, `claude plugin validate`, `claude plugin test`). It needs the `claude` CLI; a session without it says so in the PR's evidence section instead of skipping silently.
+- **Tests:** `scripts/check.sh` (type check, `claude plugin validate`, `claude plugin test`, the commit gate's tests). It needs the `claude` CLI, and the type check needs the declarations Claude Code writes into `.claude-plugin/types/` when it loads the mod, which a cloud session doesn't have; a session without it says so in the PR's evidence section instead of skipping silently.
+- **Commit gate:** `.claude/settings.json` runs `scripts/commit-gate.sh` before an agent's `git commit` and blocks it when a check fails. A check that can't run in the session is skipped and the agent is told. It guards work on this repo and is not part of the mod.
 
 <!-- gstack:verify: scripts/check.sh -->
