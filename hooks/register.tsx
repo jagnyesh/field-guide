@@ -224,7 +224,7 @@ function lastRun(): TestRun | undefined {
   return undefined
 }
 
-// What the hooks beneath drew. Up to 2.1.316, where the band is one shared slot, that is the engine's own
+// What the hooks beneath drew. Up to 2.1.322, where the band is one shared slot, that is the engine's own
 // node when nothing else is there (seen live, #3 checks), or else another mod's tree. From 2.1.323 each
 // plugin has its own row, and passing returns the engine's node unless a hook naming this plugin or `*`
 // answers beneath. Then it returns that mod's tree and this is true (seen in `claude plugin test`, ADR 0004).
@@ -698,10 +698,11 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     const line = bandLine(e.props.isWorking, await read($, acknowledged))
-    // A teaching mod never crowds out a survey, nor on builds up to 2.1.316 another mod's band, safety
+    // A teaching mod never crowds out a survey, nor on builds up to 2.1.322 another mod's band, safety
     // mods above all; a flag it can't show there goes to the status line instead. From 2.1.323 the engine
     // stacks one row per plugin, so Field Guide keeps its row beside another mod's and the flag stays here.
-    // It still gives way when another mod's hook names this plugin or `*` and answers over its row (ADR 0004).
+    // It still gives way when a hook beneath it in the chain names this plugin or `*` and answers for its
+    // row (ADR 0004).
     if (e.props.hasSurvey || isDrawnBeneath(below)) {
       setStatus($, line?.isFlag ? line.text : undefined)
       return below
