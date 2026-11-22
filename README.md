@@ -6,7 +6,7 @@ Design notes: [PRD](docs/PRD.md) · [glossary](CONTEXT.md) · [ADRs](docs/adr/).
 
 ## Install
 
-Needs Claude Code 2.1.287 or later (mods load by default). Built and tested on 2.1.303.
+Needs Claude Code 2.1.287 or later (mods load by default). The live checks were made on 2.1.303, and the stand-in suite (`scripts/check.sh`) is run on 2.1.330. See "How it was checked".
 
 ```bash
 claude plugin marketplace add jagnyesh/field-guide
@@ -79,13 +79,13 @@ No text from a tool result or a message leaves the transcript ([ADR 0003](docs/a
 
 ## How it was checked
 
-Claude Code 2.1.303, Haiku, macOS. The first column is what a behaviour rests on.
+The first column is what a behaviour rests on, and the build it was checked on. The live checks used Claude Code 2.1.303, Haiku, on macOS. The stand-in suite was run on Linux.
 
 | Checked | Behaviours |
 |---|---|
-| Live, headless (`scripts/headless.sh`, real engine, one run each) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass (also through a Write that rewrites the test file), Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
-| Live, interactive (tmux at 80 and 144 columns) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
-| Stand-in host only (`claude plugin test`) | Rendering of every pane and the band, giving way in the band, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
+| Live, headless (`scripts/headless.sh`, real engine, one run each; 2.1.303) | Transcript turns and Settled turns with backgrounded subagents; pytest and vitest runs; Unverified edit, Ended red, Test changed to pass (also through a Write that rewrites the test file), Boundary mock; the mid-turn check at `git commit`, and none when it's denied; exact shell edits from the change list; the Reading List with subagent reads; compaction records and re-attached files across processes; the real `/context` breakdown; continuity across `--resume`. |
+| Live, interactive (tmux at 80 and 144 columns; 2.1.303) | See [docs/release-0.1.0.md](docs/release-0.1.0.md). |
+| Stand-in host only (`claude plugin test`; 2.1.330, Linux) | Rendering of every pane and the band, giving way to a survey in the band, keeping its own band row beside another mod's, toasts, acknowledgement, Tell Claude, the exact-breakdown button, turn growth, options. |
 
 ## Limitations
 
