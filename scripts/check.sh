@@ -6,4 +6,4 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 "$root/scripts/typecheck.sh" "$@"
 claude plugin validate "$root" | tail -1
 claude plugin test "$root" | tail -3
-"$root/scripts/commit-gate.test.sh" | tail -2
+"$root/scripts/commit-gate.test.sh"

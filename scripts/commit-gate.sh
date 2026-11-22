@@ -1,27 +1,23 @@
 #!/usr/bin/env bash
-# Commit gate: runs this repo's checks before an agent's `git commit` and blocks the commit when one fails.
-# Wired as a PreToolUse hook in .claude/settings.json; reads the hook's JSON payload on stdin.
-#   exit 0  the call goes ahead (not a commit, or every check that could run passed)
-#   exit 2  the commit is blocked, and stderr tells the agent which check failed
-# A check that can't run here (no declarations for the type check, no `claude` CLI) is skipped,
-# and the agent is told so it can say so in the PR's evidence.
+# Commit gate: runs this repo's checks before a commit and blocks the commit when one fails.
+# git runs it as scripts/git-hooks/pre-commit once scripts/install-hooks.sh has pointed the clone at it,
+# so it applies to every `git commit`, an agent's or a person's, however the command is written.
+#   exit 0  the commit goes ahead (every check that could run passed)
+#   exit 1  the commit is blocked, and stderr says which check failed
+# A check that can't run here (no declarations for the type check, no `claude` CLI) is skipped and
+# named on stderr, so the session can say so in the PR's evidence.
+# It tests the working tree as it stands, which can hold changes that aren't staged.
 # This guards work on the repo. It is not part of the mod, whose own hooks only watch (ADR 0001).
 set -uo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
-
-command="$(python3 -I -c 'import json,sys; print(json.load(sys.stdin)["tool_input"]["command"])' 2>/dev/null)" || exit 0
-
-# `git commit`, allowing options between the two words (git -C dir commit, git -c k=v commit).
-is_commit='(^|[;&|(]|[[:space:]])git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+commit([[:space:]]|$)'
-printf '%s' "$command" | grep -Eq "$is_commit" || exit 0
-# The words alone are not a commit when another command only prints them.
-printf '%s' "$command" | grep -Eq '^[[:space:]]*echo[[:space:]]' && ! printf '%s' "$command" | grep -Eq '[;&|]' && exit 0
+root="$(git rev-parse --show-toplevel)" || exit 0
+# git gives a hook its own GIT_DIR and index; the checks must not inherit them.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 
 skipped=()
 # Lines that mark a failure in a runner's or compiler's output.
 failure_line='^\(fail\)|^[[:space:]]*(error|Error|ERROR|FAILED)'
 
-check() { # check <name shown to the agent> <command...>
+check() { # check <name shown in the message> <command...>
   local name="$1" output
   shift
   if ! output="$("$@" 2>&1)"; then
@@ -35,7 +31,7 @@ check() { # check <name shown to the agent> <command...>
       echo "--- last lines of its output ---"
       printf '%s\n' "$output" | tail -8
     } >&2
-    exit 2
+    exit 1
   fi
 }
 
@@ -53,7 +49,6 @@ else
 fi
 
 if [ "${#skipped[@]}" -gt 0 ]; then
-  note="Commit gate: skipped $(printf '%s; ' "${skipped[@]}")so this commit is not fully checked. Say so in the PR's Testing evidence."
-  python3 -I -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]},"systemMessage":sys.argv[1]}))' "$note"
+  echo "Commit gate: skipped $(printf '%s; ' "${skipped[@]}")so this commit is not fully checked. Say so in the PR's Testing evidence." >&2
 fi
 exit 0
