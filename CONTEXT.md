@@ -86,7 +86,7 @@ _Avoid_: redaction (nothing is detected or removed; content is never copied)
 
 - A **New developer** learns **Agent mechanics** first, then **Codebase understanding**.
 - Turn-level **Flags** are judged only when a **Settled turn** ends; until then, only live facts show. The one mid-turn check is the toast at a `git commit` or `git push`, which raises no flag.
-- Field Guide gives way in the band to a survey; a **Flag** it cannot show there goes to the status line. On builds with one band row per plugin (2.1.323 and later) it keeps its own row beside another mod's. On builds up to 2.1.316, where the band is one shared slot, it gives way to another mod as well.
+- Field Guide gives way in the band to a survey; a **Flag** it cannot show there goes to the status line. On builds with one band row per plugin (2.1.323 and later) it keeps its own row beside another mod's (seen in `claude plugin test`, not yet in a live session; #32). On builds up to 2.1.316, where the band is one shared slot, it gives way to another mod as well.
 - Each edited file in a turn has one **Reading List**; the **Reading List** bridges **Agent mechanics** and **Codebase understanding**.
 
 ## Flagged ambiguities
