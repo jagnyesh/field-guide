@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
-# Commit gate: runs this repo's checks before a commit and blocks the commit when one fails.
-# git runs it as scripts/git-hooks/pre-commit once scripts/install-hooks.sh has pointed the clone at it,
-# so it applies to every `git commit`, an agent's or a person's, however the command is written.
-#   exit 0  the commit goes ahead (every check that could run passed)
-#   exit 1  the commit is blocked, and stderr says which check failed
+# Push gate: runs this repo's checks before a push and blocks the push when one fails.
+# git runs it as scripts/git-hooks/pre-push once scripts/install-hooks.sh has pointed the clone at it,
+# so it applies to every `git push`, an agent's or a person's, however the command is written.
+# Commits are not gated: CLAUDE.md section 3 has a failing test committed before its fix.
+#   exit 0  the push goes ahead (every check that could run passed, or it only deletes branches)
+#   exit 1  the push is blocked, and stderr says which check failed
 # A check that can't run here (no declarations for the type check, no `claude` CLI) is skipped and
 # named on stderr, so the session can say so in the PR's evidence.
-# It tests the working tree as it stands, which can hold changes that aren't staged.
+# It tests the working tree as it stands, which can differ from the commits being pushed.
 # This guards work on the repo. It is not part of the mod, whose own hooks only watch (ADR 0001).
 set -uo pipefail
 root="$(git rev-parse --show-toplevel)" || exit 0
-# git gives a hook its own GIT_DIR and index; the checks must not inherit them.
-unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+
+# git lists what is being pushed on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+# A push that only deletes remote branches (local sha all zeros) sends no code to check.
+refs="$(cat)"
+if [ -n "$refs" ] && ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { found = 1 } END { exit !found }'; then
+  exit 0
+fi
+
+# git can give a hook its own GIT_DIR and index; the checks must not inherit them.
+unset $(git rev-parse --local-env-vars)
 
 skipped=()
 # Lines that mark a failure in a runner's or compiler's output.
@@ -22,7 +31,7 @@ check() { # check <name shown in the message> <command...>
   shift
   if ! output="$("$@" 2>&1)"; then
     {
-      echo "Commit gate: \`$name\` failed, so this commit was blocked. Fix the failure and commit again."
+      echo "Push gate: \`$name\` failed, so this push was blocked. Fix the failure, commit, and push again."
       echo "Never edit a test to make it pass (CLAUDE.md section 3). If the failure isn't from your change, stop and tell J."
       if printf '%s\n' "$output" | grep -Eq "$failure_line"; then
         echo "--- failures in its output ---"
@@ -49,6 +58,6 @@ else
 fi
 
 if [ "${#skipped[@]}" -gt 0 ]; then
-  echo "Commit gate: skipped $(printf '%s; ' "${skipped[@]}")so this commit is not fully checked. Say so in the PR's Testing evidence." >&2
+  echo "Push gate: skipped $(printf '%s; ' "${skipped[@]}")so this push is not fully checked. Say so in the PR's Testing evidence." >&2
 fi
 exit 0

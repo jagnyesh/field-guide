@@ -5,6 +5,6 @@
 # To turn the hooks off again: git config --unset core.hooksPath
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
-chmod +x "$root/scripts/git-hooks/pre-commit" "$root/scripts/commit-gate.sh"
+chmod +x "$root/scripts/git-hooks/pre-push" "$root/scripts/push-gate.sh"
 git -C "$root" config core.hooksPath scripts/git-hooks
 echo "git hooks on: $(git -C "$root" config core.hooksPath)"

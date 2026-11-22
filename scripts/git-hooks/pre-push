@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# git's pre-push hook for this repo: runs the push gate. Turned on by scripts/install-hooks.sh.
+exec "$(git rev-parse --show-toplevel)/scripts/push-gate.sh"
