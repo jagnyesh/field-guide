@@ -205,6 +205,21 @@ describe('Loop Trace pane', () => {
     await band.unmount()
   })
 
+  test('while a survey holds the band, the flag goes to the status line; once the survey goes, it is back in the band and the status line is cleared', async ($, on) => {
+    const engine = standIn(on, EDITED)
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    const survey = BAND()
+    const held = await $.ui.mount({ ...survey, props: { ...survey.props, hasSurvey: true } })
+    expect(await held.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeUndefined()
+    expect(engine.statuses.at(-1)).toMatch(/No test or check ran since the last edit/)
+    await held.unmount()
+    const raised = engine.statuses.length
+    const band = await $.ui.mount(BAND())
+    expect(await band.find({ type: 'Text', text: /No test or check ran since the last edit/ })).toBeDefined()
+    expect(engine.statuses.slice(raised)).toEqual([undefined])
+    await band.unmount()
+  })
+
   test('the band validates at 80 and 144 columns and never runs past its width', async ($, on) => {
     standIn(on, EDITED)
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
