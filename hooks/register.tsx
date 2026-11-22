@@ -226,7 +226,8 @@ function lastRun(): TestRun | undefined {
 
 // What the hooks beneath drew. Up to 2.1.316, where the band is one shared slot, that is the engine's own
 // node when nothing else is there (seen live, #3 checks), or else another mod's tree. From 2.1.323 each
-// plugin has its own row and passing returns only the engine's node, so this is false there (ADR 0004).
+// plugin has its own row, and passing returns the engine's node unless a hook naming this plugin or `*`
+// answers beneath. Then it returns that mod's tree and this is true (seen in `claude plugin test`, ADR 0004).
 function isDrawnBeneath(tree: unknown): boolean {
   return typeof tree === 'object' && tree !== null && (tree as { type?: unknown }).type !== 'engine'
 }
@@ -699,8 +700,8 @@ export const register: Register = (on, options) => {
     const line = bandLine(e.props.isWorking, await read($, acknowledged))
     // A teaching mod never crowds out a survey, nor on builds up to 2.1.316 another mod's band, safety
     // mods above all; a flag it can't show there goes to the status line instead. From 2.1.323 the engine
-    // stacks one row per plugin, so Field Guide keeps its row beside another mod's and the flag stays here
-    // (ADR 0004).
+    // stacks one row per plugin, so Field Guide keeps its row beside another mod's and the flag stays here.
+    // It still gives way when another mod's hook names this plugin or `*` and answers over its row (ADR 0004).
     if (e.props.hasSurvey || isDrawnBeneath(below)) {
       setStatus($, line?.isFlag ? line.text : undefined)
       return below
