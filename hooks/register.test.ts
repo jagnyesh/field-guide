@@ -153,7 +153,7 @@ describe('Loop Trace pane', () => {
     plugin: 'field-guide',
     surface: 'terminal' as const,
     component: 'AbovePrompt' as const,
-    props: { hasSurvey: false, isWorking: false, maxRows: 4, bodyColumns, scroll: { offset: 0, bodyRows: 4 }, view: {} },
+    props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 4, bodyColumns, scroll: { offset: 0, bodyRows: 4 }, view: {} },
   })
   const EDITED = [
     { role: 'user', text: 'change the limit', toolUses: [] },
