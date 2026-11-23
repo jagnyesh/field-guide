@@ -69,3 +69,5 @@ When J corrects a session, add one dated line to this file that states the rule,
 - **Low:** `docs/**`, `README.md`, glossary wording in `CONTEXT.md`, tests outside `lib/fixtures/**`, refactors with no behavior change outside the High paths.
 - **Decision log:** one file per decision in `docs/adr/`. A new term goes in `CONTEXT.md` first.
 - **Tests:** `scripts/check.sh` (type check, `claude plugin validate`, `claude plugin test`). It needs the `claude` CLI; a session without it says so in the PR's evidence section instead of skipping silently.
+
+<!-- gstack:verify: scripts/check.sh -->
