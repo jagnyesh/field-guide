@@ -62,6 +62,12 @@ For High-tier work, and for any open question a Medium change rests on:
 
 When J corrects a session, add one dated line to this file that states the rule, with the case as its precedent, so the next session doesn't need the same correction.
 
+### 9. Claims, numbers and size
+
+- Label every claim in a report, PR body or review verdict as measured (you ran it and saw the output), inferred (it follows from what you read) or a guess. An unlabeled claim reads as measured.
+- Before you trust, report or act on a measured number (a speedup, token count, eval score or cost), name what limits it and rule out that it measured something other than the work you meant. Precedent: in researchflow, a cost aggregator double-charged because `input_tokens` already included `cache_read`.
+- Subtract before you add. Remove dead code and unused paths first, make the smallest change that does the job, and prefer deleting to adding a new abstraction.
+
 ### In this repo
 
 - **High:** anything that could let a finding reach the model, or block, delay or rewrite a tool call (ADR 0001 and the README's "it only watches" promise), which includes `hooks/**`; what leaves the transcript (ADR 0003, `lib/metadata.ts`, the debug log); the logic that decides a flag (`lib/flags.ts`, `lib/testrun.ts`, `lib/classify.ts`); test fixtures (`lib/fixtures/**`).
