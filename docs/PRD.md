@@ -1,6 +1,6 @@
 # PRD: Field Guide — a Claude Code mod that teaches new developers what the agent is doing
 
-Status: needs-triage
+Status: v1 shipped as 0.1.0. Follow-up work is tracked in GitHub issues.
 
 Terms in **bold** are defined in CONTEXT.md at the repository root.
 
