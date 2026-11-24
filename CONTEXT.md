@@ -32,7 +32,7 @@ _Avoid_: context files, related files, dependencies
 The part of the context paid again on every request: system-prompt sections, memory files, tool definitions, and MCP server instructions. Shown by section with estimated sizes. It does not grow from turn to turn.
 
 **Turn growth**:
-The measured change in context tokens from one main-loop turn to the next (exact). It is split across that turn's messages: the prompt, the assistant's text, each tool result, and attachments, each estimated from its text length.
+The measured change in context tokens from one main-loop turn to the next (exact). It is split across that turn's messages: the prompt, the assistant's text, each tool use, and attachments, each estimated from its text length. A tool's row covers both the input the model wrote, as the transcript records it, and the tool's result.
 
 **Unattributed**:
 The part of **Turn growth** that the per-message estimates do not cover: system reminders, formatting, and thinking. Shown as its own row and never scaled away.

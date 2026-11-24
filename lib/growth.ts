@@ -1,6 +1,6 @@
 import { asBuiltIn, shortName } from './mcp'
 import { summarize } from './transcript'
-import type { TranscriptMessage } from './transcript'
+import type { ToolUse, TranscriptMessage } from './transcript'
 import { approxTokens } from './xray'
 
 export type GrowthPart = { readonly label: string; readonly approxTokens: number }
@@ -29,7 +29,7 @@ export function turnGrowth({ measured, rows, attachmentChars, cwd = '' }: Growth
     }
     text += row.text.length
     for (const use of row.toolUses ?? []) {
-      parts.push({ label: `${shortName(use.tool)} ${summarize(asBuiltIn(use), cwd)}`.trimEnd(), approxTokens: approxTokens(use.text?.length ?? 0) })
+      parts.push({ label: `${shortName(use.tool)} ${summarize(asBuiltIn(use), cwd)}`.trimEnd(), approxTokens: approxTokens(toolChars(use)) })
     }
   }
   if (attachmentChars > 0) parts.push({ label: 'Attachments', approxTokens: approxTokens(attachmentChars) })
@@ -37,4 +37,10 @@ export function turnGrowth({ measured, rows, attachmentChars, cwd = '' }: Growth
   if (text > 0) parts.push({ label: 'Agent text', approxTokens: approxTokens(text) })
   const sorted = parts.filter(p => p.approxTokens > 0).sort((a, b) => b.approxTokens - a.approxTokens)
   return { measured, parts: sorted, unattributed: measured - sorted.reduce((sum, p) => sum + p.approxTokens, 0) }
+}
+
+// The input the model wrote, as the transcript records it (not asBuiltIn's relabelled form), plus the
+// result. Lengths only: neither text is kept or shown (Metadata-only rule).
+function toolChars(use: ToolUse): number {
+  return JSON.stringify(use.input).length + (use.text?.length ?? 0)
 }
