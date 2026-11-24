@@ -535,6 +535,31 @@ describe('Loop Trace pane', () => {
     await ui.unmount()
   })
 
+  test('X-ray mounts with a tool row sized from its input at narrow and wide panes', async ($, on) => {
+    const first = [{ role: 'user', text: 'hello', toolUses: [] }, { role: 'assistant', text: 'hi', toolUses: [] }]
+    const second = [
+      ...first,
+      { role: 'user', text: 'write the big file', toolUses: [] },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'w', tool: 'Write', input: { file_path: 'src/big.py', content: 'x'.repeat(12_000) }, text: 'ok' }] },
+    ]
+    let rows: unknown[] = first
+    let fill = 10_000
+    mock.env(on, {})
+    standIn(on, () => rows, { breakdown: BREAKDOWN, contextTokens: () => fill })
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+    await $.turn.complete(DONE)
+    rows = second
+    fill = 15_000
+    await $.turn.complete(DONE)
+    await $.command.run({ ...RUN, args: 'xray' })
+    for (const bodyColumns of [80, 144]) {
+      const ui = await $.ui.mount({ ...XRAY_PANE, props: { ...XRAY_PANE.props, bodyColumns } })
+      expect(await ui.find({ type: 'Text', text: /Write src\/big\.py\s+≈ 3\.0k/ })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+
   test('the exact breakdown runs only when asked for, and says it sends token-count requests', async ($, on) => {
     const engine = standIn(on, [], { breakdown: BREAKDOWN })
     await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
