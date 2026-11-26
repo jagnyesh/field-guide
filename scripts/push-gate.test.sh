@@ -59,10 +59,13 @@ SH
   : > "$CALLS"
 }
 
-# gate [dir under the tree]: runs the gate directly, with no refs on stdin;
+# The line git writes on the hook's stdin for a push of one new branch.
+pushed_ref='refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000'
+
+# gate [dir under the tree]: runs the gate directly, as for a push of one new branch;
 # sets $code, $out (stdout), $err (stderr)
 gate() {
-  out="$(cd "$tree/${1:-.}" && PATH="$tree/bin:/usr/bin:/bin" bash "$tree/scripts/push-gate.sh" </dev/null 2>"$tmp/stderr")"
+  out="$(cd "$tree/${1:-.}" && printf '%s\n' "$pushed_ref" | PATH="$tree/bin:/usr/bin:/bin" bash "$tree/scripts/push-gate.sh" 2>"$tmp/stderr")"
   code=$?
   err="$(cat "$tmp/stderr")"
 }
@@ -154,12 +157,20 @@ check "from a subfolder: checks the top level" ran "claude plugin test $tree "
 
 # The checks never see the git environment a hook is given.
 setup hook-environment yes yes
-out="$(cd "$tree" && GIT_DIR="$tree/.git" GIT_INDEX_FILE="$tree/.git/index" PATH="$tree/bin:/usr/bin:/bin" bash "$tree/scripts/push-gate.sh" </dev/null 2>"$tmp/stderr")"
+out="$(cd "$tree" && printf '%s\n' "$pushed_ref" | GIT_DIR="$tree/.git" GIT_INDEX_FILE="$tree/.git/index" PATH="$tree/bin:/usr/bin:/bin" bash "$tree/scripts/push-gate.sh" 2>"$tmp/stderr")"
 code=$?
 err="$(cat "$tmp/stderr")"
 check "hook environment: the checks ran" ran "claude plugin test"
 check "hook environment: no check was given GIT_DIR" not ran ".*GIT_DIR=[^u]"
 check "hook environment: no check was given GIT_INDEX_FILE" not ran ".*GIT_INDEX_FILE=[^u]"
+
+# A push with nothing to send (git passes no refs on stdin) runs no check, even while red.
+setup nothing-to-send yes yes
+out="$(cd "$tree" && PATH="$tree/bin:/usr/bin:/bin" STUB_TEST=1 bash "$tree/scripts/push-gate.sh" </dev/null 2>"$tmp/stderr")"
+code=$?
+err="$(cat "$tmp/stderr")"
+check "nothing to send: lets the push through" exits 0
+check "nothing to send: no check ran" ran_nothing
 
 # --- Through git: scripts/install-hooks.sh, then real commits and pushes ---
 
@@ -191,6 +202,12 @@ check "green push: the tests ran" ran "claude plugin test $tree "
 STUB_TEST=1 commit "second"
 STUB_TEST=1 in_tree git push -q origin HEAD:refs/heads/main
 check "red push of a new commit: the remote is unchanged" remote_at main HEAD~1
+
+# Pushing again with nothing new is up to date: no check, never blocked.
+: > "$CALLS"
+STUB_TEST=1 in_tree git push -q origin HEAD~1:refs/heads/main
+check "red, push already up to date: succeeds" exits 0
+check "red, push already up to date: no check ran" ran_nothing
 
 # Deleting a remote branch sends no code, so it runs no check and is never blocked.
 git -C "$remote" branch scratch main
