@@ -3,7 +3,7 @@
 # git runs it as scripts/git-hooks/pre-push once scripts/install-hooks.sh has pointed the clone at it,
 # so it applies to every `git push`, an agent's or a person's, however the command is written.
 # Commits are not gated: CLAUDE.md section 3 has a failing test committed before its fix.
-#   exit 0  the push goes ahead (every check that could run passed, or it only deletes branches)
+#   exit 0  the push goes ahead (every check that could run passed, or it sends no code)
 #   exit 1  the push is blocked, and stderr says which check failed
 # A check that can't run here (no declarations for the type check, no `claude` CLI) is skipped and
 # named on stderr, so the session can say so in the PR's evidence.
@@ -14,9 +14,10 @@ root="$(git rev-parse --show-toplevel)" || exit 0
 
 # git lists what is being pushed on stdin: <local ref> <local sha> <remote ref> <remote sha>.
 # (Run by hand from a terminal, it waits here for that input; end it with Ctrl-D.)
-# A push that only deletes remote branches (local sha all zeros) sends no code to check.
+# A push with nothing to send (no lines, as when it is up to date) or that only deletes
+# remote branches (local sha all zeros) sends no code to check.
 refs="$(cat)"
-if ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { found = 1 } END { exit !found }'; then
+if ! printf '%s\n' "$refs" | awk 'NF >= 4 && $2 !~ /^0+$/ { found = 1 } END { exit !found }'; then
   exit 0
 fi
 
