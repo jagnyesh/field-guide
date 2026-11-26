@@ -13,9 +13,10 @@ set -uo pipefail
 root="$(git rev-parse --show-toplevel)" || exit 0
 
 # git lists what is being pushed on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+# (Run by hand from a terminal, it waits here for that input; end it with Ctrl-D.)
 # A push that only deletes remote branches (local sha all zeros) sends no code to check.
 refs="$(cat)"
-if [ -n "$refs" ] && ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { found = 1 } END { exit !found }'; then
+if ! printf '%s\n' "$refs" | awk '$2 !~ /^0+$/ { found = 1 } END { exit !found }'; then
   exit 0
 fi
 
@@ -58,6 +59,6 @@ else
 fi
 
 if [ "${#skipped[@]}" -gt 0 ]; then
-  echo "Push gate: skipped $(printf '%s; ' "${skipped[@]}")so this push is not fully checked. Say so in the PR's Testing evidence." >&2
+  echo "Push gate: skipped $(printf '%s, ' "${skipped[@]}" | sed 's/, $//'), so this push is not fully checked. Say so in the PR's Testing evidence." >&2
 fi
 exit 0
